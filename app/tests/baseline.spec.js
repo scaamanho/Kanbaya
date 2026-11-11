@@ -1,8 +1,7 @@
 const { test, expect } = require('@playwright/test');
-const { fixture } = require('./fixtures');
+const { fixture, seed } = require('./fixtures');
 test('preserves legacy card details, search and calendar contracts', async ({ page }) => {
-  await page.addInitScript(data => localStorage.setItem('kanbaya-pwa:v1', JSON.stringify(data)), fixture(20));
-  await page.goto('/app/#/b/board0');
+  await seed(page, fixture(20));
   await expect(page.locator('.board-title')).toHaveValue('Tablero 0');
   await page.locator('.card').filter({ hasText: 'Tarea 0' }).click();
   await expect(page.locator('.description-view')).toHaveText('Descripción 0');
@@ -19,8 +18,7 @@ test('preserves legacy card details, search and calendar contracts', async ({ pa
   await expect(page.locator('.cal-day')).toHaveCount(42);
 });
 test('due date removal fits the card editor on desktop and mobile', async ({ page }) => {
-  await page.addInitScript(data => localStorage.setItem('kanbaya-pwa:v1', JSON.stringify(data)), fixture(20));
-  await page.goto('/app/#/b/board0');
+  await seed(page, fixture(20));
   await page.locator('.card').filter({ hasText: 'Tarea 0' }).click();
   for (const width of [1280, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
@@ -39,8 +37,7 @@ test('due date removal fits the card editor on desktop and mobile', async ({ pag
   await expect(page.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
 });
 test('template name uses a cancellable app dialog and accepts Enter', async ({ page }) => {
-  await page.addInitScript(data => localStorage.setItem('kanbaya-pwa:v1', JSON.stringify(data)), fixture(20));
-  await page.goto('/app/#/b/board0');
+  await seed(page, fixture(20));
   await page.locator('.card').filter({ hasText: 'Tarea 0' }).click();
   await page.locator('[data-act="save-template"]').click();
   const dialog = page.getByRole('dialog', { name: 'Template name' });
@@ -67,7 +64,7 @@ test('shows IndexedDB storage usage and refreshes it after saving', async ({ pag
       value: { estimate: async () => ({ usage: (estimates++ === 0 ? 10 : 45) * 1024 * 1024, quota: 100 * 1024 * 1024 }) }
     });
   });
-  await page.goto('/app/');
+  await seed(page);
   const progress = page.getByRole('progressbar', { name: 'Storage used' });
   await expect(progress).toHaveAttribute('aria-valuenow', '10');
   await expect(page.locator('.storage-value')).toHaveText('10%');
@@ -85,8 +82,7 @@ test('renders selected-label checkmarks without encoding artifacts', async ({ pa
   expect(await selectedLabel.evaluate(label => getComputedStyle(label, '::before').content)).toBe('"✓"');
 });
 test('card priority is editable, visible, and persisted', async ({ page }) => {
-  await page.addInitScript(data => localStorage.setItem('kanbaya-pwa:v1', JSON.stringify(data)), fixture(20));
-  await page.goto('/app/#/b/board0');
+  await seed(page, fixture(20));
   const card = page.locator('.card').filter({ hasText: 'Tarea 0' });
   await card.click();
   await page.getByLabel('Priority').selectOption('critical');
@@ -108,8 +104,7 @@ test('adds sample priorities to an existing My first board without replacing set
   ];
   cards.forEach((card, index) => { card.title = titles[index]; });
   cards[0].priority = 'critical';
-  await page.addInitScript(value => localStorage.setItem('kanbaya-pwa:v1', JSON.stringify(value)), data);
-  await page.goto('/app/#/b/board0');
+  await seed(page, data);
   await expect(page.locator('.card').filter({ hasText: titles[0] }).locator('.priority-badge')).toHaveText('▲ Critical');
   await expect(page.locator('.card').filter({ hasText: titles[1] }).locator('.priority-badge')).toHaveText('▲ Medium');
   await expect(page.locator('.card').filter({ hasText: titles[2] }).locator('.priority-badge')).toHaveText('▲ High');
@@ -134,8 +129,7 @@ test('board statistics summarize only the selected board', async ({ page }) => {
   cards[1].due = '';
   cards[1].priority = 'low';
   cards[2].completed = true;
-  await page.addInitScript(value => localStorage.setItem('kanbaya-pwa:v1', JSON.stringify(value)), data);
-  await page.goto('/app/#/b/board0');
+  await seed(page, data);
   await page.locator('[data-act="board-menu"]').click();
   await page.locator('[data-act="open-statistics"]').click();
 
@@ -203,11 +197,10 @@ test('home search keeps focus and caret across delayed filtering without stealin
   await expect(search).not.toBeFocused();
 });
 test('board names fit their text and wrap without clipping on narrow screens', async ({ page }, testInfo) => {
-  const names = ['Kambaya', 'WWW WWW WWW', 'W'.repeat(100)];
+  const names = ['Kanbaya', 'WWW WWW WWW', 'W'.repeat(100)];
   const data = fixture(4);
   data.boards[0].name = names[0];
-  await page.addInitScript(data => localStorage.setItem('kanbaya-pwa:v1', JSON.stringify(data)), data);
-  await page.goto('/app/#/b/board0');
+  await seed(page, data);
   const title = page.getByRole('textbox', { name: 'Board name', exact: true });
   for (const name of names) {
     await title.fill(name);
@@ -228,6 +221,7 @@ test('board names fit their text and wrap without clipping on narrow screens', a
     }
   }
   await title.press('Enter');
+  await page.waitForTimeout(350);
   await page.reload();
   await expect(title).toHaveValue(names[2]);
   await page.screenshot({ path: testInfo.outputPath('board-name-mobile.png') });

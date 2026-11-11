@@ -1,19 +1,16 @@
 const { test, expect } = require('@playwright/test');
-const { fixture } = require('./fixtures');
+const { fixture, prepareDatabase } = require('./fixtures');
 test('records warm performance and bounded DOM with 10000 cards', async ({ page, context }) => {
   test.setTimeout(120000);
-  await page.addInitScript(data => {
-    if (!sessionStorage.getItem('fixture')) {
-      localStorage.setItem('kanbaya-pwa:v1', JSON.stringify(data));
-      sessionStorage.setItem('fixture', 'yes');
-    }
+  await prepareDatabase(page, fixture());
+  await page.addInitScript(() => {
     window.detailReads = 0;
     const get = IDBObjectStore.prototype.get;
     IDBObjectStore.prototype.get = function (...args) {
       if (this.name === 'cardDetails') window.detailReads++;
       return get.apply(this, args);
     };
-  }, fixture());
+  });
   await page.goto('/app/#/b/board0');
   await expect(page.locator('.card').first()).toBeVisible({ timeout: 60000 });
   const cdp = await context.newCDPSession(page);
@@ -39,7 +36,7 @@ test('records warm performance and bounded DOM with 10000 cards', async ({ page,
     await page.getByRole('button', { name: 'Edit description', exact: true }).click();
     await page.locator('[data-f="desc"]').fill(`Medición ${i}`);
     await page.getByRole('button', { name: 'Save description', exact: true }).click();
-    await page.evaluate(() => window.kambayaFlush());
+    await page.evaluate(() => window.kanbayaFlush());
     const commit = Date.now() - edit;
     await page.keyboard.press('Escape');
     await page.locator('[data-act="toggle-filters"]').click();

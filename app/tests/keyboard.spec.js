@@ -1,13 +1,8 @@
 const { test, expect } = require('@playwright/test');
-const { fixture } = require('./fixtures');
+const { fixture, seed: seedDatabase } = require('./fixtures');
 
 async function seed(page, data = fixture(8)) {
-  await page.addInitScript(data => {
-    if (!sessionStorage.getItem('fixture')) {
-      localStorage.setItem('kanbaya-pwa:v1', JSON.stringify(data));
-      sessionStorage.setItem('fixture', 'yes');
-    }
-  }, data);
+  await seedDatabase(page, data);
   await page.goto('/app/#/b/board0');
   await expect(page.locator('.board-title')).toHaveValue('Tablero 0');
 }

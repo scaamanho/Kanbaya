@@ -16,4 +16,18 @@ function fixture(count = 10000) {
   }
   return { version: 2, theme: 'dark', boards, templates: [{ id: 'template', title: 'Modelo', desc: 'Contenido', checklist: ['Paso'] }] };
 }
-module.exports = { fixture };
+async function prepareDatabase(page, data = fixture(20)) {
+  await page.goto('/tests/blank');
+  await page.addScriptTag({ url: '/app/vendor/dexie.min.js' });
+  await page.addScriptTag({ url: '/app/scripts/storage.js' });
+  await page.evaluate(async state => {
+    const store = new KanbayaStore();
+    try { await store.initialize(() => state); }
+    finally { store.db.close(); }
+  }, data);
+}
+async function seed(page, data = fixture(20), url = '/app/#/b/board0') {
+  await prepareDatabase(page, data);
+  await page.goto(url);
+}
+module.exports = { fixture, prepareDatabase, seed };

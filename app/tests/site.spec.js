@@ -6,7 +6,7 @@ for (const width of [1280, 390, 320]) {
     await page.goto('/project/');
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Less noise.More progress.');
-    await expect(page.getByRole('link', { name: /Get started with Kambaya/ })).toHaveAttribute('href', 'app/');
+    await expect(page.getByRole('link', { name: /Get started with Kanbaya/ })).toHaveAttribute('href', 'app/');
     for (const image of await page.locator('main img').all()) {
       await image.scrollIntoViewIfNeeded();
       await expect.poll(() => image.evaluate(el => el.complete && el.naturalWidth > 0)).toBe(true);
@@ -15,7 +15,7 @@ for (const width of [1280, 390, 320]) {
     }
 
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-    await page.getByRole('link', { name: /Get started with Kambaya/ }).click();
+    await page.getByRole('link', { name: /Get started with Kanbaya/ }).click();
     await expect(page).toHaveURL(/\/project\/app\/$/);
     await expect(page.getByRole('heading', { name: 'Your boards' })).toBeVisible();
   });
@@ -72,10 +72,10 @@ test.describe('without JavaScript', () => {
 
 test('install link opens the app with an installation banner and browser instructions', async ({ page }) => {
   await page.goto('/project/');
-  await page.getByRole('link', { name: 'Install Kambaya' }).click();
+  await page.getByRole('link', { name: 'Install Kanbaya' }).click();
   await expect(page).toHaveURL(/\/project\/app\/\?install=1$/);
   await expect(page.getByRole('heading', { name: 'Your boards' })).toBeVisible();
-  const banner = page.getByRole('region', { name: 'Install Kambaya' });
+  const banner = page.getByRole('region', { name: 'Install Kanbaya' });
   await expect(banner).toBeVisible();
   await banner.getByRole('button', { name: 'Install', exact: true }).click();
   await expect(banner).toContainText('Add to Home Screen');
@@ -94,7 +94,7 @@ test('the app install banner invokes an available browser prompt', async ({ page
     event.prompt = async () => { window.installCalls++; return { outcome: 'accepted' }; };
     window.dispatchEvent(event);
   });
-  const banner = page.getByRole('region', { name: 'Install Kambaya' });
+  const banner = page.getByRole('region', { name: 'Install Kanbaya' });
   await expect(page.getByRole('button', { name: '⬇ Install' })).toBeVisible();
   await banner.getByRole('button', { name: 'Install', exact: true }).click();
   expect(await page.evaluate(() => window.installCalls)).toBe(1);

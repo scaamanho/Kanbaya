@@ -1,17 +1,11 @@
 const { test, expect } = require('@playwright/test');
-const { fixture } = require('./fixtures');
-async function seed(page, data = fixture(20), key = 'kanbaya-pwa:v1') {
-  await page.addInitScript(({ data, key }) => {
-    if (!sessionStorage.getItem('fixture')) {
-      localStorage.setItem(key, typeof data === 'string' ? data : JSON.stringify(data));
-      sessionStorage.setItem('fixture', 'yes');
-    }
-  }, { data, key });
-  await page.goto('/app/#/b/board0');
+const { fixture, seed: seedDatabase, prepareDatabase } = require('./fixtures');
+async function seed(page, data = fixture(20)) {
+  await seedDatabase(page, data);
 }
 async function db(page, fn) {
   return page.evaluate(async source => {
-    const store = new KambayaStore();
+    const store = new KanbayaStore();
     await store.db.open();
     try { return await (new Function('store', 'return (' + source + ')(store)'))(store); }
     finally { store.db.close(); }
@@ -47,22 +41,16 @@ test('lane menu Add card opens a focused composer and saves in the selected lane
   await page.keyboard.press('Escape');
   await expect(composer).toHaveCount(0);
 });
-test('migrates all fields and identities once, retaining the original', async ({ page }) => {
+test('initializes all fields once and retains them across restarts', async ({ page }) => {
   const original = fixture(20);
   await seed(page, original);
   await expect(page.locator('.card').first()).toBeVisible();
   const exported = await db(page, store => store.exportState());
   expect(exported.boards.map(b => b.lists.map(l => l.cards))).toEqual(original.boards.map(b => b.lists.map(l => l.cards)));
   expect(exported.templates).toEqual(original.templates);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('kanbaya-pwa:v1')))).toEqual(original);
   await page.reload();
   await expect(page.locator('.card').first()).toBeVisible();
   expect(await db(page, store => store.db.cards.count())).toBe(20);
-});
-test('also migrates the previous kanban storage key', async ({ page }) => {
-  await seed(page, fixture(4), 'kanban-pwa:v1');
-  await expect(page.locator('.card')).toHaveCount(2);
-  expect(await db(page, store => store.db.cards.count())).toBe(4);
 });
 test('valid empty state stays empty across restarts', async ({ page }) => {
   await seed(page, { version: 2, theme: 'light', boards: [], templates: [] });
@@ -71,18 +59,20 @@ test('valid empty state stays empty across restarts', async ({ page }) => {
   await expect(page.locator('.empty')).toBeVisible();
   expect(await db(page, store => store.db.boards.count())).toBe(0);
 });
-test('corrupt and duplicate data do not seed or partially migrate', async ({ page }) => {
-  await seed(page, '{broken');
-  await expect(page.locator('.storage-error')).toContainText('Writes are blocked');
-  expect(await db(page, store => store.db.cards.count())).toBe(0);
-  expect(await page.evaluate(() => localStorage.getItem('kanbaya-pwa:v1'))).toBe('{broken');
-});
-test('duplicate card ids fail migration atomically', async ({ page }) => {
+test('duplicate card ids fail initialization atomically', async ({ page }) => {
   const data = fixture(6);
   data.boards[0].lists[0].cards[1].id = data.boards[0].lists[0].cards[0].id;
-  await seed(page, data);
-  await expect(page.locator('.storage-error')).toContainText('duplicate identifiers');
-  expect(await db(page, store => store.db.cards.count())).toBe(0);
+  await page.goto('/tests/blank');
+  await page.addScriptTag({ url: '/app/vendor/dexie.min.js' });
+  await page.addScriptTag({ url: '/app/scripts/storage.js' });
+  const result = await page.evaluate(async state => {
+    const store = new KanbayaStore();
+    try { await store.initialize(() => state); return { error: null, cards: await store.db.cards.count() }; }
+    catch (error) { return { error: error.message, cards: await store.db.cards.count() }; }
+    finally { store.db.close(); }
+  }, data);
+  expect(result.error).toContain('duplicate identifiers');
+  expect(result.cards).toBe(0);
 });
 test('windowed list remains bounded and finds unloaded detail text', async ({ page }) => {
   test.setTimeout(120000);
@@ -99,7 +89,7 @@ test('windowed list remains bounded and finds unloaded detail text', async ({ pa
   await expect(page.locator('.card')).toHaveCount(1);
   await page.locator('.card').click();
   await expect(page.locator('.description-view')).toHaveText('aguja-remota');
-  console.log('10k migration + initial view + scroll + search (ms):', Date.now() - started);
+  console.log('10k initialization + initial view + scroll + search (ms):', Date.now() - started);
 });
 test('saving one card only writes its summary, details and metadata', async ({ page }) => {
   await seed(page);
@@ -331,7 +321,7 @@ test('offline reload retains dependencies and supports writes', async ({ page, c
   await expect.poll(() => db(page, store => store.db.cardDetails.get(['board0', 'card0']).then(c => c.desc))).toBe('Sin conexión');
   await context.setOffline(false);
 });
-test('migration rollback can retry after an interrupted transaction', async ({ page }) => {
+test('initialization rollback can retry after an interrupted transaction', async ({ page }) => {
   await page.addInitScript(() => {
     if (sessionStorage.getItem('failure-injected')) return;
     sessionStorage.setItem('failure-injected', 'yes');
@@ -341,18 +331,18 @@ test('migration rollback can retry after an interrupted transaction', async ({ p
       return original.apply(this, args);
     };
   });
-  await seed(page);
+  await page.goto('/app/');
   await expect(page.locator('.storage-error')).toBeVisible();
   expect(await db(page, store => store.db.cards.count())).toBe(0);
   expect(await db(page, store => store.db.settings.get('initialized'))).toBeUndefined();
   await page.reload();
-  await expect(page.locator('.card').first()).toBeVisible();
-  expect(await db(page, store => store.db.cards.count())).toBe(20);
+  await expect(page.locator('.board-tile').first()).toBeVisible();
+  expect(await db(page, store => store.db.cards.count())).toBe(5);
 });
 test('an installed legacy worker cannot mix old app code with the new shell', async ({ page }) => {
+  await prepareDatabase(page, { version: 2, theme: 'auto', boards: [], templates: [] });
   await page.goto('/app/tests/blank');
   await page.evaluate(async () => {
-    localStorage.setItem('kanbaya-pwa:v1', JSON.stringify({ version: 2, theme: 'auto', boards: [], templates: [] }));
     await navigator.serviceWorker.register('/app/sw.js?legacy=1');
     await navigator.serviceWorker.ready;
     if (!navigator.serviceWorker.controller) await new Promise(resolve => navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true }));
@@ -364,16 +354,16 @@ test('an installed legacy worker cannot mix old app code with the new shell', as
   expect(await db(page, store => store.db.cards.count())).toBe(0);
 });
 test('moves the previous root worker to app scope without losing data', async ({ page }) => {
+  await prepareDatabase(page, { version: 2, theme: 'auto', boards: [], templates: [] });
   await page.goto('/tests/blank');
   await page.evaluate(async () => {
-    localStorage.setItem('kanbaya-pwa:v1', JSON.stringify({ version: 2, theme: 'auto', boards: [], templates: [] }));
     await navigator.serviceWorker.register('/sw.js?legacy-root=1');
     await navigator.serviceWorker.ready;
     if (!navigator.serviceWorker.controller) await new Promise(resolve => navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true }));
   });
   await page.goto('/app/?install=1');
   await expect(page.locator('.empty')).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Install Kambaya' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Install Kanbaya' })).toBeVisible();
   expect(await db(page, store => store.db.cards.count())).toBe(0);
   expect(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).map(reg => new URL(reg.scope).pathname))).toEqual(['/app/']);
   await page.goto('/tests/blank');
@@ -420,13 +410,13 @@ test('a schema upgrade closes old connections and warns before further edits', a
   await seed(page);
   await expect(page.locator('.card').first()).toBeVisible();
   await page.evaluate(async () => {
-    const newer = new Dexie('kambaya');
+    const newer = new Dexie('kanbaya');
     newer.version(3).stores({ settings: 'key' });
     await newer.open(); newer.close();
   });
   await expect(page.locator('.storage-error')).toContainText('new version');
 });
-test('clearing boards retains theme and templates and never remigrates the old copy', async ({ page }) => {
+test('clearing boards retains theme and templates across restarts', async ({ page }) => {
   await seed(page);
   await page.locator('[data-act="data-menu"]').click();
   await page.getByRole('menuitem', { name: 'Delete all data' }).click();
@@ -438,28 +428,28 @@ test('clearing boards retains theme and templates and never remigrates the old c
   expect(await db(page, store => store.db.templates.count())).toBe(1);
   expect(await page.locator('html').getAttribute('data-theme')).toBe('dark');
 });
-test('two first-start migrations share one atomic initialization', async ({ page }) => {
+test('two first-start requests share one atomic initialization', async ({ page }) => {
   await page.goto('/tests/blank');
   await page.addScriptTag({ url: '/app/vendor/dexie.min.js' });
   await page.addScriptTag({ url: '/app/scripts/storage.js' });
   const result = await page.evaluate(async data => {
-    const a = new KambayaStore('kambaya-test-concurrency');
-    const b = new KambayaStore('kambaya-test-concurrency');
-    await Promise.all([a.initialize(JSON.stringify(data), s => s, () => data), b.initialize(JSON.stringify(data), s => s, () => data)]);
+    const a = new KanbayaStore('kanbaya-test-concurrency');
+    const b = new KanbayaStore('kanbaya-test-concurrency');
+    await Promise.all([a.initialize(() => data), b.initialize(() => data)]);
     const count = await a.db.cards.count();
     a.db.close(); b.db.close();
-    await Dexie.delete('kambaya-test-concurrency');
+    await Dexie.delete('kanbaya-test-concurrency');
     return count;
   }, fixture(20));
   expect(result).toBe(20);
 });
 test('blocked database upgrade shows an actionable error', async ({ page }) => {
   await page.addInitScript(() => {
-    const request = indexedDB.open('kambaya', 1);
+    const request = indexedDB.open('kanbaya', 1);
     request.onsuccess = () => { window.blocker = request.result; };
   });
   await page.goto('/app/');
-  await expect(page.locator('.storage-error')).toContainText('Close other Kambaya tabs');
+  await expect(page.locator('.storage-error')).toContainText('Close other Kanbaya tabs');
   await page.evaluate(() => window.blocker.close());
 });
 test('fractional positions are rebalanced atomically when precision runs out', async ({ page }) => {
@@ -467,8 +457,8 @@ test('fractional positions are rebalanced atomically when precision runs out', a
   await page.addScriptTag({ url: '/app/vendor/dexie.min.js' });
   await page.addScriptTag({ url: '/app/scripts/storage.js' });
   const ordered = await page.evaluate(async data => {
-    const store = new KambayaStore('kambaya-test-positions');
-    const state = await store.initialize(JSON.stringify(data), s => s, () => data);
+    const store = new KanbayaStore('kanbaya-test-positions');
+    const state = await store.initialize(() => data);
     await store.hydrate(state.boards[0]);
     const list = state.boards[0].lists[0];
     list.cards[0]._pos = 1;
@@ -482,7 +472,7 @@ test('fractional positions are rebalanced atomically when precision runs out', a
     list.cards.splice(1, 0, moving);
     await store.commit(state);
     const rows = await store.db.cards.where('[boardId+listId+position]').between(['board0', 'list0', -Infinity], ['board0', 'list0', Infinity]).toArray();
-    store.db.close(); await Dexie.delete('kambaya-test-positions');
+    store.db.close(); await Dexie.delete('kanbaya-test-positions');
     return rows.map(c => c.id);
   }, fixture(6));
   expect(ordered).toEqual(['card0', 'card4', 'card2']);
@@ -492,8 +482,8 @@ test('edits made during an in-flight commit are not mistaken for persisted data'
   await page.addScriptTag({ url: '/app/vendor/dexie.min.js' });
   await page.addScriptTag({ url: '/app/scripts/storage.js' });
   const desc = await page.evaluate(async data => {
-    const store = new KambayaStore('kambaya-test-draft');
-    const state = await store.initialize(JSON.stringify(data), s => s, () => data);
+    const store = new KanbayaStore('kanbaya-test-draft');
+    const state = await store.initialize(() => data);
     await store.hydrate(state.boards[0]); store.adopt(state);
     const card = state.boards[0].lists[0].cards[0];
     card.desc = 'Primer cambio';
@@ -502,7 +492,7 @@ test('edits made during an in-flight commit are not mistaken for persisted data'
     await pending;
     await store.commit(state);
     const saved = await store.db.cardDetails.get(['board0', card.id]);
-    store.db.close(); await Dexie.delete('kambaya-test-draft');
+    store.db.close(); await Dexie.delete('kanbaya-test-draft');
     return saved.desc;
   }, fixture(6));
   expect(desc).toBe('Segundo cambio durante el guardado');

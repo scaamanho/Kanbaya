@@ -24,7 +24,7 @@
     });
   };
   class Store {
-    constructor(name = 'kambaya') {
+    constructor(name = 'kanbaya') {
       this.db = new Dexie(name);
       this.db.version(1).stores({
         boards: 'id, position',
@@ -100,22 +100,15 @@
         }
       }
     }
-    async initialize(legacy, normalize, seed) {
+    async initialize(seed) {
       await this.db.open();
       if (!await this.db.settings.get('initialized')) {
-        if (typeof legacy === 'function') legacy = legacy();
-        let state;
-        if (legacy !== null) {
-          const parsed = JSON.parse(legacy);
-          if (!parsed || !Array.isArray(parsed.boards)) throw new Error('The local backup has an invalid format.');
-          state = normalize(parsed);
-        } else state = seed();
+        const state = seed();
         const rows = this.flatten(state);
-        // Flattening must never hide duplicate legacy identities.
         const ids = new Set();
         const unique = (kind, id) => {
           const key = JSON.stringify([kind, ...id]);
-          if (ids.has(key)) throw new Error('The backup contains duplicate identifiers: ' + kind);
+          if (ids.has(key)) throw new Error('The initial data contains duplicate identifiers: ' + kind);
           ids.add(key);
         };
         state.boards.forEach(b => {
@@ -136,7 +129,7 @@
             const values = [...rows.values()].filter(row => row.table === table.name).map(row => row.value);
             if (values.length) await table.bulkAdd(values);
           }
-          if (await this.db.cards.count() !== state.boards.reduce((n, b) => n + b.lists.reduce((m, l) => m + l.cards.length, 0), 0)) throw new Error('The migrated card count does not match.');
+          if (await this.db.cards.count() !== state.boards.reduce((n, b) => n + b.lists.reduce((m, l) => m + l.cards.length, 0), 0)) throw new Error('The initial card count does not match.');
           await this.recount(state.boards.map(b => b.id));
           await this.db.settings.bulkPut([{ key: 'initialized', value: true }, { key: 'revision', value: 0 }]);
         });
@@ -293,7 +286,7 @@
         images: boardIds ? await this.db.images.where('boardId').anyOf(boardIds).toArray() : await this.db.images.toArray()
       }));
       if (!includeTemplates) delete state.templates;
-      const data = { app: 'kambaya', ...state, exportedAt: new Date().toISOString() };
+      const data = { app: 'kanbaya', ...state, exportedAt: new Date().toISOString() };
       if (!images.length) return { extension: 'json', blob: new Blob([JSON.stringify(data)], { type: 'application/json' }) };
       // Binary envelope: magic, little-endian JSON header length, header, then stored blobs.
       const header = new TextEncoder().encode(JSON.stringify({
@@ -301,17 +294,17 @@
       }));
       const length = new Uint8Array(4);
       new DataView(length.buffer).setUint32(0, header.length, true);
-      return { extension: 'kambaya', blob: new Blob(['KAMBAYA4', length, header, ...images.map(image => image.blob)], { type: 'application/octet-stream' }) };
+      return { extension: 'kanbaya', blob: new Blob(['KANBAYA4', length, header, ...images.map(image => image.blob)], { type: 'application/octet-stream' }) };
     }
     async parseBackup(file) {
       const magic = await file.slice(0, 8).text();
-      if (!['KAMBAYA3', 'KAMBAYA4'].includes(magic)) return { data: JSON.parse(await file.text()), images: [] };
+      if (magic !== 'KANBAYA4') return { data: JSON.parse(await file.text()), images: [] };
       if (file.size < 12) throw new Error('The attachment backup is truncated.');
       const headerSize = new DataView(await file.slice(8, 12).arrayBuffer()).getUint32(0, true);
       let offset = 12 + headerSize;
       if (offset > file.size) throw new Error('The attachment backup header is truncated.');
       const data = JSON.parse(await file.slice(12, offset).text());
-      if (data.version !== (magic === 'KAMBAYA4' ? 4 : 3) || !Array.isArray(data.images)) throw new Error('Invalid attachment backup format.');
+      if (data.version !== 4 || !Array.isArray(data.images)) throw new Error('Invalid attachment backup format.');
       const ids = new Set(), images = [];
       for (const image of data.images) {
         const isFile = data.version === 4 && image?.kind === 'file';
@@ -541,5 +534,5 @@
       return rows.filter(Boolean).map(row => this.summary(row));
     }
   }
-  window.KambayaStore = Store;
+  window.KanbayaStore = Store;
 })();

@@ -1,12 +1,12 @@
 /* Service worker: la app funciona sin conexión.
    Estrategia: recursos versionados y activación coordinada.
    Si cambias archivos, sube el número de versión de CACHE. */
-const VERSION = '26';
-const CACHE = 'kambaya-pwa-v' + VERSION;
+const VERSION = '27';
+const CACHE = 'kanbaya-pwa-v' + VERSION;
 const ASSETS = [
-  './', 'index.html', 'css/styles.css?v=26', 'scripts/boot.js?v=26', 'scripts/app.js?v=26',
-  'scripts/storage.js?v=26', 'scripts/virtual.js?v=26', 'vendor/dexie.min.js?v=26',
-  'vendor/marked.umd.js?v=26', 'vendor/purify.min.js?v=26', 'manifest.webmanifest',
+  './', 'index.html', 'css/styles.css?v=27', 'scripts/boot.js?v=27', 'scripts/app.js?v=27',
+  'scripts/storage.js?v=27', 'scripts/virtual.js?v=27', 'vendor/dexie.min.js?v=27',
+  'vendor/marked.umd.js?v=27', 'vendor/purify.min.js?v=27', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'
 ];
 
@@ -21,7 +21,7 @@ self.addEventListener('message', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k.startsWith('kambaya-pwa-') && k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k.startsWith('kanbaya-pwa-') && k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -35,6 +35,6 @@ self.addEventListener('fetch', e => {
     const cached = await cache.match(req);
     if (cached) return cached;
     try { return await fetch(req); }
-    catch (error) { console.warn('Kambaya: resource unavailable offline', req.url, error); return Response.error(); }
+    catch (error) { console.warn('Kanbaya: resource unavailable offline', req.url, error); return Response.error(); }
   })());
 });

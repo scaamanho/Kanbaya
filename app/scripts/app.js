@@ -1,7 +1,6 @@
 'use strict';
-/* Kambaya PWA. Persistencia transaccional local con Dexie. */
+/* Kanbaya PWA. Persistencia transaccional local con Dexie. */
 (() => {
-  const KEY = 'kanbaya-pwa:v1';
   const PALETTE = ['#4bce97', '#f5cd47', '#fea362', '#f87168', '#9f8fef', '#579dff', '#6cc3e0', '#94c748', '#e774bb', '#8c9bab'];
   const PRIORITIES = [{ value: '', label: 'No priority' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'critical', label: 'Critical' }];
   const WELCOME_PRIORITIES = {
@@ -30,7 +29,7 @@
     'linear-gradient(135deg,#505f79,#172b4d)',
     '#0c66e4', '#1f845a', '#ae2e24', '#5e4db2', '#37474f'
   ];
-  const LOGO = '<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="kambaya-k" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d7ff70"/><stop offset=".52" stop-color="#48db9a"/><stop offset="1" stop-color="#00a98f"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="#073b2a"/><path d="M14 10h11v18L43 10h14L35 30l23 24H43L25 36v18H14z" fill="url(#kambaya-k)"/></svg>';
+  const LOGO = '<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="kanbaya-k" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d7ff70"/><stop offset=".52" stop-color="#48db9a"/><stop offset="1" stop-color="#00a98f"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="#073b2a"/><path d="M14 10h11v18L43 10h14L35 30l23 24H43L25 36v18H14z" fill="url(#kanbaya-k)"/></svg>';
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -134,12 +133,7 @@
     return { version: 2, theme: 'auto', boards: [b], templates: [] };
   }
 
-  function normalizeState(s) {
-    if (s.boards.some(b => !b || typeof b !== 'object')) throw new Error('The backup contains an invalid board.');
-    return { version: 2, theme: ['auto', 'light', 'dark'].includes(s.theme) ? s.theme : 'auto', boards: s.boards.map(normBoard), templates: Array.isArray(s.templates) ? s.templates.map(t => ({ id: String(t.id || uid()), title: String(t.title || 'Template').slice(0, 100), desc: String(t.desc || ''), checklist: Array.isArray(t.checklist) ? t.checklist.map(x => String(x).slice(0, 200)) : [] })) : [] };
-  }
-
-  const store = new KambayaStore();
+  const store = new KanbayaStore();
   let state = { version: 2, theme: 'auto', boards: [], templates: [] };
   const ui = { q: '', boardQuery: '', filters: { status: [], due: [], labels: [] }, filterOpen: false, emojiOpen: false, emojiTarget: null, view: 'board', month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), composer: null, addingList: false, modal: null, focus: null, scrollBottom: null, scrollRight: false };
   let descriptionDraft = null;
@@ -151,9 +145,9 @@
   let work = Promise.resolve(), queued = 0, undoRequest = null;
   let windows = [], viewGeneration = 0;
   const notices = [];
-  const channel = 'BroadcastChannel' in window ? new BroadcastChannel('kambaya:commits') : null;
+  const channel = 'BroadcastChannel' in window ? new BroadcastChannel('kanbaya:commits') : null;
   function storageError(error) {
-    console.error('Kambaya: storage', error);
+    console.error('Kanbaya: storage', error);
     failed = true;
     $('#app').inert = true;
     $('#modal-root').inert = true;
@@ -163,16 +157,12 @@
     $('[data-recovery="export"]', panel).onclick = async () => {
       try {
         const persisted = await store.exportBackup();
-        download(`kambaya-recovery-${todayStr()}.${persisted.extension}`, persisted.blob);
-        download(`kambaya-partial-draft-${todayStr()}.json`, JSON.stringify({ warning: 'Contains only loaded records and pending changes; this is not a complete backup.', state, descriptionDraft }));
+        download(`kanbaya-recovery-${todayStr()}.${persisted.extension}`, persisted.blob);
+        download(`kanbaya-partial-draft-${todayStr()}.json`, JSON.stringify({ warning: 'Contains only loaded records and pending changes; this is not a complete backup.', state, descriptionDraft }));
       } catch (recoveryError) {
-        console.error('Kambaya: recovery', recoveryError);
-        let legacy = null;
-        try { legacy = localStorage.getItem(KEY) ?? localStorage.getItem('kanban-pwa:v1'); }
-        catch (legacyError) { console.warn('Kambaya: the old backup is also unavailable', legacyError); }
-        if (legacy !== null) download('kambaya-original-localStorage.json', legacy);
-        download('kambaya-partial-draft.json', JSON.stringify({ warning: 'IndexedDB unavailable; partial draft, not a complete backup.', state, descriptionDraft }));
-        toast('Only the available old backup and partial draft have been recovered.');
+        console.error('Kanbaya: recovery', recoveryError);
+        download('kanbaya-partial-draft.json', JSON.stringify({ warning: 'IndexedDB unavailable; partial draft, not a complete backup.', state, descriptionDraft }));
+        toast('Only the partial draft could be recovered.');
       }
     };
     $('[data-recovery="reload"]', panel).onclick = async () => {
@@ -218,7 +208,7 @@
       } catch (error) {
         notices.length = 0;
         if (error.name === 'WipLimitError') {
-          console.warn('Kambaya: WIP limit', error);
+          console.warn('Kanbaya: WIP limit', error);
           try {
             clearTimeout(saveT); saveT = null; dirty = false; undoRequest = null;
             store.pendingImages.clear(); store.rebalances = [];
@@ -244,7 +234,7 @@
     if (saveT || dirty || queued || hasDescriptionChanges()) { e.preventDefault(); e.returnValue = ''; }
   });
   store.oncommit = () => channel?.postMessage({ revision: store.revision });
-  store.onblocked = () => storageError(new Error('Close other Kambaya tabs to upgrade the database.'));
+  store.onblocked = () => storageError(new Error('Close other Kanbaya tabs to upgrade the database.'));
   store.onversionchange = () => storageError(new Error('A new version of the database is available. Reload this tab.'));
 
   const boardById = id => state.boards.find(b => b.id === id);
@@ -336,7 +326,7 @@
         if (ui.modal?.id === c.id) ui.modal.images = [...(ui.modal.images || []), ...images.map(({ blob, ...metadata }) => metadata)];
       }, `${images.length} attachment(s) added`);
     } catch (error) {
-      console.error('Kambaya: attachment upload', error);
+      console.error('Kanbaya: attachment upload', error);
       toast(`Could not add attachments: ${error.message}`);
     } finally { if (status?.isConnected) status.textContent = ''; }
   }
@@ -361,7 +351,7 @@
   const imageElements = new Map();
   function imagePreviewError(el, error) {
     if (!el.isConnected) return;
-    console.error('Kambaya: image preview', error);
+    console.error('Kanbaya: image preview', error);
     el.alt = 'Image unavailable';
     toast(`Could not display image: ${error.message}`);
   }
@@ -473,7 +463,7 @@
     const usage = storageUsage && storageUsage.quota > 0 ? Math.min(100, Math.round(storageUsage.usage / storageUsage.quota * 100)) : null;
     const details = usage === null ? '' : `${formatStorageBytes(storageUsage.usage)} used of ${formatStorageBytes(storageUsage.quota)}`;
     return `<header class="topbar">
-      <a class="brand" href="#/" aria-label="Home">${LOGO}<span>Kambaya</span></a>
+      <a class="brand" href="#/" aria-label="Home">${LOGO}<span>Kanbaya</span></a>
       <button class="btn ghost" data-act="boards-menu">Boards ▾</button>
       <button class="btn primary sm" data-act="new-board">＋ Create</button>
       <span class="spacer"></span>
@@ -481,7 +471,7 @@
         <div class="storage-meter-head"><span>Storage</span><span class="storage-value">${usage === null ? 'Checking…' : `${usage}%`}</span></div>
         <div class="storage-track" role="progressbar" aria-label="Storage used" aria-valuemin="0" aria-valuemax="100"${usage === null ? '' : ` aria-valuenow="${usage}" aria-valuetext="${details} (${usage}%)" title="${details} (${usage}%)"`}><span style="width:${usage ?? 0}%"></span></div>
       </div>
-      ${window.kambayaInstallAvailable ? '<button class="btn ghost sm" type="button" data-install-trigger>⬇ Install</button>' : ''}
+      ${window.kanbayaInstallAvailable ? '<button class="btn ghost sm" type="button" data-install-trigger>⬇ Install</button>' : ''}
       <button class="icon-btn" data-act="theme" title="Theme: ${themeName()}" aria-label="Change theme (current: ${themeName()})">${themeIcon()}</button>
       <button class="icon-btn" data-act="data-menu" title="Data" aria-label="Data menu">⋯</button>
     </header>`;
@@ -673,7 +663,7 @@
     const s = captureScroll();
     const search = document.activeElement?.matches('.home-board-search') ? document.activeElement : null;
     const searchSelection = search ? { start: search.selectionStart, end: search.selectionEnd, direction: search.selectionDirection } : null;
-    document.title = b ? `${b.name} · Kambaya` : 'Kambaya';
+    document.title = b ? `${b.name} · Kanbaya` : 'Kanbaya';
     $('#app').innerHTML = topbarHTML() + (b ? boardHTML(b) : homeHTML());
     sizeBoardTitle();
     restoreScroll(s, b?.id);
@@ -715,7 +705,7 @@
     const rowsByHost = new Map();
     const make = async (host, keys, key, html, estimate) => {
       if (!valid() || !host.isConnected) return;
-      const window = new KambayaVirtual(host, keys, {
+      const window = new KanbayaVirtual(host, keys, {
         key: `${b.id}:${key}:${query}:${JSON.stringify(filters)}`,
         revision: store.revision, html, estimate,
         label: host.closest('.list')?.querySelector('.list-title')?.textContent || 'Cards',
@@ -755,7 +745,7 @@
     }
     const templates = $('.templates-window');
     if (templates && valid()) {
-      const virtual = new KambayaVirtual(templates, state.templates, {
+      const virtual = new KanbayaVirtual(templates, state.templates, {
         key: 'templates', revision: store.revision, estimate: 100,
         read: async rows => rows, html: templateHTML,
         paused: () => !valid(), error: storageError
@@ -1085,7 +1075,7 @@ const answer = 42;
   async function exportBoards(boards, name, includeTemplates = false) {
     await flush();
     const backup = await store.exportBackup(boards.map(b => b.id), includeTemplates);
-    download(`${name || 'kambaya'}-${todayStr()}.${backup.extension}`, backup.blob);
+    download(`${name || 'kanbaya'}-${todayStr()}.${backup.extension}`, backup.blob);
   }
   $('#import-file').addEventListener('change', async e => {
     const file = e.target.files[0]; e.target.value = ''; if (!file) return;
@@ -1108,14 +1098,14 @@ const answer = 42;
           if (card.imageIds) {
             if (card.coverImageId && !isImage(imageMap.get(card.coverImageId))) throw new Error('Invalid cover in backup.');
             copy.imageIds = [...ids.values()]; copy.coverImageId = ids.get(card.coverImageId) || null;
-            copy.desc = KambayaStore.remapDescription(copy.desc, ids);
+            copy.desc = KanbayaStore.remapDescription(copy.desc, ids);
           }
         }
       }
       if (used.size !== images.length) throw new Error('The backup contains orphaned attachments.');
       if (!list.length) throw new Error('empty');
       await run(() => mutate(() => { staged.forEach(image => store.stageImage(image)); state.boards.push(...list); if (Array.isArray(data.templates)) state.templates.push(...data.templates.map(t => ({ id: uid(), title: String(t.title || 'Template').slice(0, 100), desc: String(t.desc || ''), checklist: Array.isArray(t.checklist) ? t.checklist.map(x => String(x).slice(0, 200)) : [] }))); }, `${list.length} board(s) imported`));
-    } catch (error) { console.error('Kambaya: import', error); toast('⚠ The file is not a valid Kambaya backup'); }
+    } catch (error) { console.error('Kanbaya: import', error); toast('⚠ The file is not a valid Kanbaya backup'); }
   });
 
   /* ---------------- Acciones ---------------- */
@@ -1134,7 +1124,7 @@ const answer = 42;
     },
     'data-menu'(el) {
       openMenu(el, [
-        { label: 'Export all boards (backup)', fn: () => exportBoards(state.boards, 'kambaya', true) },
+        { label: 'Export all boards (backup)', fn: () => exportBoards(state.boards, 'kanbaya', true) },
         { label: 'Import from file…', fn: () => $('#import-file').click() },
         { sep: true },
         { label: 'Delete all data', danger: true, fn: async () => { if (await confirmAction('Delete ALL boards from this browser? This action cannot be undone (export a backup first).')) { state.boards = []; save(); location.hash = '#/'; render(); } } }
@@ -1385,10 +1375,10 @@ const answer = 42;
           if (!image) throw new Error('The attachment no longer exists.');
           const extension = { 'image/webp': 'webp', 'image/png': 'png', 'image/jpeg': 'jpg' }[image.mime];
           try {
-            const blob = await KambayaStore.attachmentBlob(image);
+            const blob = await KanbayaStore.attachmentBlob(image);
             download(isImage(image) ? `${(image.name || 'Image').replace(/\.[^.]+$/, '')}.${extension}` : image.name || 'Attachment', blob);
           } catch (error) {
-            console.error('Kambaya: attachment download', error);
+            console.error('Kanbaya: attachment download', error);
             toast(`Could not download attachment: ${error.message}`);
           }
         } },
@@ -1413,7 +1403,7 @@ const answer = 42;
         const name = decodeURIComponent(url.pathname.split('/').pop() || 'Attachment');
         await addAttachments([new File([blob], name, { type: blob.type })], context);
       } catch (error) {
-        console.error('Kambaya: image URL', error);
+        console.error('Kanbaya: image URL', error);
         toast(`Could not download attachment. Check the URL, connection and CORS permissions. ${error.message}`);
       } finally { const status = $('.image-status'); if (status) status.textContent = ''; }
     },
@@ -1718,7 +1708,7 @@ const answer = 42;
   }
   if (channel) channel.onmessage = () => refreshExternal().catch(storageError);
   addEventListener('focus', () => refreshExternal().catch(storageError));
-  addEventListener('kambaya-install-change', () => run(() => render()));
+  addEventListener('kanbaya-install-change', () => run(() => render()));
 
   /* ---------------- Arrastrar y soltar (ratón + táctil) ---------------- */
   function onPointerDown(e) {
@@ -1876,17 +1866,17 @@ const answer = 42;
   let searchT = null;
   async function start() {
     try {
-      state = await store.initialize(() => localStorage.getItem(KEY) ?? localStorage.getItem('kanban-pwa:v1'), normalizeState, seed);
+      state = await store.initialize(seed);
       await store.applyWelcomePriorities('My first board', WELCOME_PRIORITIES);
       ready = true;
       if (location.hash.startsWith('#/b/') && !cur()) location.replace('#/');
       render();
       refreshStorageUsage();
-      navigator.storage?.persist?.().catch(error => console.warn('Kambaya: could not request persistent storage', error));
+      navigator.storage?.persist?.().catch(error => console.warn('Kanbaya: could not request persistent storage', error));
     } catch (error) { storageError(error); }
   }
   start();
-  window.kambayaFlush = async () => {
+  window.kanbayaFlush = async () => {
     if (hasDescriptionChanges()) throw new Error('Save or cancel the description before updating.');
     await run(() => {});
     if (failed || dirty || saveT) throw new Error('Export pending changes before updating.');

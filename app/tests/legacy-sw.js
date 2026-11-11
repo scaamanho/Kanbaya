@@ -1,4 +1,4 @@
-const CACHE = 'kambaya-pwa-v4';
+const CACHE = 'kanbaya-pwa-v4';
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);

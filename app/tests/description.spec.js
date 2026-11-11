@@ -1,17 +1,17 @@
 const { test, expect } = require('@playwright/test');
-const { fixture } = require('./fixtures');
+const { fixture, seed: seedDatabase } = require('./fixtures');
 
 async function seed(page) {
   page.descriptionErrors = [];
   page.on('pageerror', error => page.descriptionErrors.push(error.message));
-  await page.addInitScript(data => localStorage.setItem('kanbaya-pwa:v1', JSON.stringify(data)), fixture(4));
+  await seedDatabase(page, fixture(4));
   await page.goto('/app/#/b/board0');
   await page.locator('.card').filter({ hasText: 'Tarea 0' }).click();
 }
 
 async function savedDescription(page) {
   return page.evaluate(async () => {
-    const store = new KambayaStore();
+    const store = new KanbayaStore();
     try {
       await store.db.open();
       return (await store.db.cardDetails.get(['board0', 'card0'])).desc;
@@ -163,7 +163,7 @@ test('close, Escape and navigation protect unsaved drafts and update activation 
   const textarea = page.getByRole('textbox', { name: 'Description', exact: true });
   await textarea.fill('Draft to keep');
   const updateError = await page.evaluate(async () => {
-    try { await kambayaFlush(); return null; } catch (error) { return error.message; }
+    try { await kanbayaFlush(); return null; } catch (error) { return error.message; }
   });
   expect(updateError).toContain('Save or cancel the description');
   await page.getByRole('button', { name: 'Close', exact: true }).click();

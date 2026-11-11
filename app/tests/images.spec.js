@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { fixture } = require('./fixtures');
+const { fixture, seed: seedDatabase } = require('./fixtures');
 const fs = require('node:fs/promises');
 
 test.beforeEach(({ page }) => {
@@ -9,12 +9,7 @@ test.beforeEach(({ page }) => {
 test.afterEach(({ page }) => { expect(page.imageErrors).toEqual([]); });
 
 async function seed(page) {
-  await page.addInitScript(data => {
-    if (!sessionStorage.getItem('fixture')) {
-      localStorage.setItem('kanbaya-pwa:v1', JSON.stringify(data));
-      sessionStorage.setItem('fixture', 'yes');
-    }
-  }, fixture(4));
+  await seedDatabase(page, fixture(4));
   await page.goto('/app/#/b/board0');
   await page.locator('.card').filter({ hasText: 'Tarea 0' }).click();
 }
@@ -40,7 +35,7 @@ async function attach(page, files, count) {
 
 async function db(page, fn) {
   return page.evaluate(async source => {
-    const store = new KambayaStore();
+    const store = new KanbayaStore();
     await store.db.open();
     try { return await (new Function('store', 'return (' + source + ')(store)'))(store); }
     finally { store.db.close(); }
@@ -184,11 +179,11 @@ test('binary backups round-trip image bytes and references, board copies and del
   const pending = page.waitForEvent('download');
   await page.getByRole('menuitem', { name: 'Export all boards (backup)' }).click();
   const backup = await pending;
-  expect(backup.suggestedFilename()).toMatch(/\.kambaya$/);
+  expect(backup.suggestedFilename()).toMatch(/\.kanbaya$/);
   const buffer = await fs.readFile(await backup.path());
-  expect(buffer.subarray(0, 8).toString()).toBe('KAMBAYA4');
+  expect(buffer.subarray(0, 8).toString()).toBe('KANBAYA4');
   expect([...buffer.subarray(-original.bytes.length)]).toEqual(original.bytes);
-  await page.locator('#import-file').setInputFiles({ name: 'backup.kambaya', mimeType: 'application/octet-stream', buffer });
+  await page.locator('#import-file').setInputFiles({ name: 'backup.kanbaya', mimeType: 'application/octet-stream', buffer });
   await expect.poll(() => db(page, store => store.db.images.count())).toBe(2);
   const imported = await db(page, async store => {
     const images = await store.db.images.toArray();
@@ -239,7 +234,7 @@ test('upgrading a version 1 database preserves cards and adds an empty image sto
     await legacy.open();
     await legacy.table('cards').put({ boardId: 'old', id: 'preserved', title: 'Keep me' });
     legacy.close();
-    const store = new KambayaStore('image-upgrade-test');
+    const store = new KanbayaStore('image-upgrade-test');
     try {
       await store.db.open();
       return { title: (await store.db.cards.get(['old', 'preserved'])).title, count: await store.db.images.count(), version: store.db.verno };
@@ -265,9 +260,9 @@ test('multi-file failures and truncated backups never partially save images', as
   const download = await pending;
   const buffer = await fs.readFile(await download.path());
   await page.locator('#import-file').setInputFiles({
-    name: 'truncated.kambaya', mimeType: 'application/octet-stream', buffer: buffer.subarray(0, buffer.length - 1)
+    name: 'truncated.kanbaya', mimeType: 'application/octet-stream', buffer: buffer.subarray(0, buffer.length - 1)
   });
-  await expect(page.locator('.toast')).toContainText('not a valid Kambaya backup');
+  await expect(page.locator('.toast')).toContainText('not a valid Kanbaya backup');
   expect(await db(page, store => store.db.images.count())).toBe(1);
   expect(await db(page, store => store.db.boards.count())).toBe(2);
 });
@@ -343,7 +338,7 @@ test('compresses arbitrary files without loss, downloads original bytes and work
     const files = await store.db.images.toArray();
     return Promise.all(files.map(async file => ({
       name: file.name, mime: file.mime, size: file.size, originalSize: file.originalSize, compression: file.compression,
-      isBlob: file.blob instanceof Blob, bytes: [...new Uint8Array(await (await KambayaStore.attachmentBlob(file)).arrayBuffer())]
+      isBlob: file.blob instanceof Blob, bytes: [...new Uint8Array(await (await KanbayaStore.attachmentBlob(file)).arrayBuffer())]
     })));
   });
   const notes = saved.find(file => file.name === 'notes.txt');
@@ -472,7 +467,7 @@ test('mixed backups and copies remap description references while retaining exac
   });
   expect(result.exact.every(Boolean)).toBe(true);
   await page.locator('#import-file').setInputFiles({
-    name: 'mixed.kambaya', mimeType: 'application/octet-stream', buffer: Buffer.from(result.bytes)
+    name: 'mixed.kanbaya', mimeType: 'application/octet-stream', buffer: Buffer.from(result.bytes)
   });
   await expect.poll(() => db(page, store => store.db.images.count())).toBe(8);
   const imported = await db(page, async store => {
@@ -502,24 +497,6 @@ test('mixed backups and copies remap description references while retaining exac
     expect(card.desc).toContain(`attachment:${card.cover})`);
     expect(card.desc).toContain(`[photo]: attachment:${card.cover}`);
   }
-});
-
-test('legacy binary image backups remain readable', async ({ page }) => {
-  await seed(page);
-  await attach(page, await imageFile(page), 1);
-  const parsed = await db(page, async store => {
-    const state = await store.exportState();
-    const image = await store.db.images.toCollection().first();
-    const { blob, kind, ...metadata } = image;
-    const header = new TextEncoder().encode(JSON.stringify({ ...state, version: 3, images: [metadata] }));
-    const length = new Uint8Array(4);
-    new DataView(length.buffer).setUint32(0, header.length, true);
-    const backup = new Blob(['KAMBAYA3', length, header, blob]);
-    const result = await store.parseBackup(backup);
-    return { version: result.data.version, count: result.images.length, size: result.images[0].blob.size };
-  });
-  expect(parsed).toMatchObject({ version: 3, count: 1 });
-  expect(parsed.size).toBeGreaterThan(0);
 });
 
 test('compression and decompression failures are explicit and leave the app editable', async ({ page }) => {
@@ -566,13 +543,13 @@ test('rejects a file cover in backups before importing and blocks invalid persis
     const header = new TextEncoder().encode(JSON.stringify({ ...state, version: 4, images: [metadata] }));
     const length = new Uint8Array(4);
     new DataView(length.buffer).setUint32(0, header.length, true);
-    return [...new Uint8Array(await new Blob(['KAMBAYA4', length, header, blob]).arrayBuffer())];
+    return [...new Uint8Array(await new Blob(['KANBAYA4', length, header, blob]).arrayBuffer())];
   });
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.locator('#import-file').setInputFiles({
-    name: 'invalid.kambaya', mimeType: 'application/octet-stream', buffer: Buffer.from(invalid)
+    name: 'invalid.kanbaya', mimeType: 'application/octet-stream', buffer: Buffer.from(invalid)
   });
-  await expect(page.locator('.toast')).toContainText('not a valid Kambaya backup');
+  await expect(page.locator('.toast')).toContainText('not a valid Kanbaya backup');
   await expect(page.locator('.storage-error')).toHaveCount(0);
   expect(await db(page, store => store.db.images.count())).toBe(1);
   const result = await db(page, async store => {

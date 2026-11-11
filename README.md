@@ -1,4 +1,4 @@
-# Kambaya PWA
+# Kanbaya PWA
 
 Static Kanban application with local IndexedDB storage using Dexie 4.2.1. No backend, CDN, npm, or build step is required to run it.
 
@@ -26,16 +26,13 @@ node app\tests\server.js
 
 Open `http://127.0.0.1:8765/` for the product website or `http://127.0.0.1:8765/app/` for the application. This server is for development only. For production, publish the root `index.html`, `site.css`, `site.js`, and `assets/`, together with `app/index.html`, `app/manifest.webmanifest`, `app/sw.js`, and the `app/scripts/`, `app/css/`, `app/vendor/`, and `app/icons/` directories under the same `app/` path. Do not publish `node_modules/`, `tests/`, or test reports. Opening the HTML using `file:` does not provide the expected PWA functionality.
 
-The website's **Install Kambaya** button opens the application with an installation banner. Its **Install** button opens the native prompt when the browser provides one; otherwise it explains how to use the browser's install option. Availability depends on browser, device, and install status.
+The website's **Install Kanbaya** button opens the application with an installation banner. Its **Install** button opens the native prompt when the browser provides one; otherwise it explains how to use the browser's install option. Availability depends on browser, device, and install status.
 
 Dexie is bundled locally in [vendor/dexie.min.js](app/vendor/dexie.min.js), with its [Apache-2.0 license](app/vendor/dexie.LICENSE). Markdown uses bundled [Marked](app/vendor/marked.umd.js) ([MIT license](app/vendor/marked.LICENSE)) and [DOMPurify](app/vendor/purify.min.js) ([Apache-2.0 license](app/vendor/dompurify.LICENSE)). These libraries are not downloaded from a CDN when the application runs.
 
-## Persistence and migration
+## Persistence
 
-- [storage.js](app/scripts/storage.js) centralizes the schema, queries, and transactions. The `kambaya` database, using Dexie schema version 2, separates `boards`, `lists`, `cards`, `cardDetails`, `images`, `templates`, and `settings`. Upgrading from schema version 1 adds `images` without replacing existing records.
-- The first startup automatically migrates `kanbaya-pwa:v1`, or the older key `kanban-pwa:v1` if the first does not exist. Normalization to JSON format version 2 is preserved. The old copy is retained and is no longer modified.
-- Data and the initialization marker are committed together. Subsequent startups do not reimport the old copy, even if all boards have been deleted. A valid empty state remains empty.
-- A corrupt copy, duplicate identities, or invalid label references block migration, without replacing the data with examples or saving partial results.
+[storage.js](app/scripts/storage.js) centralizes the schema, queries, and transactions. The `kanbaya` IndexedDB database uses Dexie schema version 2 and separates `boards`, `lists`, `cards`, `cardDetails`, `images`, `templates`, and `settings`. Data and the initialization marker are committed together on first startup.
 - Edits compare only loaded metadata and records against their committed snapshot. Only changed records and affected counters are written, rather than a JSON representation of all boards.
 - Moving, deleting, importing, and undoing use transactions. Deletions include details and relationships. Undo restores only the affected operation and refuses to overwrite later revisions.
 - Tabs are notified after a commit through BroadcastChannel; regaining focus also checks the revision. Writes based on an outdated revision are rejected to avoid overwriting another tab's changes.
@@ -93,7 +90,7 @@ Before persistence, the browser decodes and resizes each image to at most 1600 p
 
 Other files use native `CompressionStream('gzip')` losslessly, including empty files. Download decompresses them automatically, preserving the original bytes, MIME type and filename (or the renamed filename). Already-compressed and very small files may not shrink. A browser supporting CompressionStream and DecompressionStream is required for these files; processing and download failures are notified explicitly.
 
-For compatibility, the existing names `imageIds` and `images` now also represent non-image attachments; no IndexedDB schema change or data rewrite is needed. Cards contain only references and `coverImageId`, never file bytes. Records contain `id`, `boardId`, `cardId`, `blob`, `mime`, `size` (stored bytes), `name`, and `created`. New images have `kind: 'image'`, `width` and `height`; existing images without `kind` remain supported. Other files have `kind: 'file'`, `compression: 'gzip'`, and `originalSize`. Indexes remain `boardId`, `[boardId+cardId]`, and `created`. All bytes are binary `Blob` values, never base64. Visible image previews load separately using temporary object URLs, revoked when their elements are removed. `KambayaStore.imageUsage()` sums all stored attachment sizes; the header meter uses `navigator.storage.estimate()` for overall origin usage, including caches.
+For compatibility within the current schema, `imageIds` and `images` also represent non-image attachments; no IndexedDB schema change or data rewrite is needed. Cards contain only references and `coverImageId`, never file bytes. Records contain `id`, `boardId`, `cardId`, `blob`, `mime`, `size` (stored bytes), `name`, and `created`. Images have `kind: 'image'`, `width` and `height`; other files have `kind: 'file'`, `compression: 'gzip'`, and `originalSize`. Indexes remain `boardId`, `[boardId+cardId]`, and `created`. All bytes are binary `Blob` values, never base64. Visible image previews load separately using temporary object URLs, revoked when their elements are removed. `KanbayaStore.imageUsage()` sums all stored attachment sizes; the header meter uses `navigator.storage.estimate()` for overall origin usage, including caches.
 
 Only images offer cover controls. The first image becomes the cover even if files were attached earlier. Use **Card appearance > Cover image**, **Make cover**, or the **Attachment options** menu to change/remove it. The menu also supports renaming, downloading, and deleting any attachment. Removing a cover does not delete the image. Deleting the cover selects the next remaining image, never a generic file. Adding another image while other images remain does not override an explicitly removed cover.
 
@@ -113,7 +110,7 @@ The editor stores a separate in-memory draft. Only **Save description** (or Ctrl
 
 [boot.js](app/scripts/boot.js) checks the Service Worker version before loading scripts. [sw.js](app/sw.js) is scoped to `app/`, so it does not control the product website; it precaches the complete versioned resource set, including Dexie, and does not mix scripts from different versions. An update waits for explicit activation; pending writes are flushed and the user is asked to close other tabs before activation. After a successful first load, the application can be reloaded and edited offline.
 
-When opening `app/` on the same origin after using version 23 at the repository root, the application unregisters the old root-scoped worker and reloads. Close other old application tabs first after saving their work. IndexedDB and localStorage remain available on the same origin. Old installations need a network connection for this transition; the old root URL and installed shortcut should be replaced with `app/`.
+When opening `app/` on the same origin after using version 23 at the repository root, the application unregisters the old root-scoped worker and reloads. Close other old application tabs first. Kanbaya starts with its own database; data from the previous product is not imported. Old installations need a network connection for this transition; the old root URL and installed shortcut should be replaced with `app/`.
 
 When changing production resources, update the version in `app/scripts/boot.js`, `app/sw.js`, their precache entries, and the versioned references in `app/index.html` together. Do not change a published schema under the same version number: add a new Dexie version and its migration.
 
@@ -121,15 +118,15 @@ When changing production resources, update the version in `app/scripts/boot.js`,
 
 Data belongs to the **browser origin**; changing the domain, port, profile, or browser does not move the database. There is no cross-device synchronization. IndexedDB and persistent storage requests do not guarantee protection against profile deletion, quotas, private browsing, or browser eviction.
 
-The application interface is in English; existing user data is not translated. Regularly use **Data > Export all boards (backup)**. Export includes offscreen records. Backups without attachments remain version 2 JSON, compatible with the original import. Backups containing attachments use a `.kambaya` binary file: the eight-byte ASCII signature `KAMBAYA4`, a four-byte little-endian JSON header length, the UTF-8 version 4 JSON header (including ordered attachment metadata in `images`), and the concatenated stored blobs (WebP/PNG/JPEG or gzip). There is no base64 conversion. Keep the whole file: both the JSON metadata and binary bytes are needed to restore attachments.
+The application interface is in English. Regularly use **Data > Export all boards (backup)**. Export includes offscreen records. Backups without attachments use version 2 JSON. Backups containing attachments use a `.kanbaya` binary file: the eight-byte ASCII signature `KANBAYA4`, a four-byte little-endian JSON header length, the UTF-8 version 4 JSON header (including ordered attachment metadata in `images`), and the concatenated stored blobs (WebP/PNG/JPEG or gzip). There is no base64 conversion. Keep the whole file: both the JSON metadata and binary bytes are needed to restore attachments.
 
 On failure, writes are blocked and recovery and reload options are offered:
 
 - If IndexedDB is still readable: download a complete backup and the pending partial draft.
-- If it cannot be read: attempt to download the old localStorage copy and the available partial draft.
-- A partial draft **is not a complete importable backup**. An old localStorage copy does not include changes made after migration. Do not delete the database or reload with an important draft without exporting it first.
+- If it cannot be read: download the available partial draft.
+- A partial draft **is not a complete importable backup**. Do not delete the database or reload with an important draft without exporting it first.
 
-Import accepts legacy JSON, version 3 `KAMBAYA3` image backups, and version 4 `.kambaya` backups. It regenerates board, card, and attachment IDs and their references (including description images), so internal board links change. Older application versions cannot import version 4 backups. The existing "Delete all data" command deletes boards and their attachments but keeps the theme and templates.
+Import accepts version 2 JSON and version 4 `.kanbaya`/`KANBAYA4` backups. It regenerates board, card, and attachment IDs and their references (including description images), so internal board links change. Older application versions cannot import version 4 backups. The existing "Delete all data" command deletes boards and their attachments but keeps the theme and templates.
 
 ## Development tests
 
@@ -153,7 +150,7 @@ Tests start a localhost server and use disposable browser profiles, synthetic da
 
 When updating Marked or DOMPurify, update their exact devDependency versions and lockfile, copy their browser distribution and license from `app/node_modules` into `app/vendor`, and bump the coordinated asset version. Do not fetch runtime scripts from a CDN.
 
-Tests cover repeatable and atomic migration, rollback/retry, duplicates, CRUD and cascading deletion, legacy and mixed binary backups, lossless file compression/download, image compression and covers, explicit Markdown editing/saving/canceling, safe rendering and reference remapping, responsive editors, quota rollback, Undo, conflicts, schema changes, offline use, updates from an old worker, keyboard navigation, mouse/touch dragging, bounded windows, and the English interface.
+Tests cover atomic initialization and rollback/retry, duplicate records, CRUD and cascading deletion, binary backups, lossless file compression/download, image compression and covers, explicit Markdown editing/saving/canceling, safe rendering and reference remapping, responsive editors, quota rollback, Undo, conflicts, schema changes, offline use, worker updates, keyboard navigation, mouse/touch dragging, bounded windows, and the English interface.
 
 ### Performance reference
 
@@ -168,7 +165,7 @@ Fixture: 10,000 cards, two boards with 5,000 each, a 1280 x 800 viewport, and Pl
 | Searching for offscreen text | 385 ms | 397 ms |
 | JavaScript heap after GC | 6.1 MiB | 6.2 MiB |
 
-The heap does not include IndexedDB storage or all browser memory. Initial migration adds overhead and is not included in these reloads. No equivalent timing baseline was recorded for the previous version: the verified improvement is structural (no global writes, on-demand details, and a bounded DOM), not an estimated speedup factor.
+The heap does not include IndexedDB storage or all browser memory. Initial database setup adds overhead and is not included in these reloads. No equivalent timing baseline was recorded for the previous version: the verified improvement is structural (no global writes, on-demand details, and a bounded DOM), not an estimated speedup factor.
 
 
 ### Test Local

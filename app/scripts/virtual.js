@@ -89,5 +89,5 @@
       if (this.frame) cancelAnimationFrame(this.frame);
     }
   }
-  window.KambayaVirtual = VirtualWindow;
+  window.KanbayaVirtual = VirtualWindow;
 })();

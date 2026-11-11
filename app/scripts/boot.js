@@ -1,12 +1,12 @@
 'use strict';
 (() => {
-  const VERSION = '26';
+  const VERSION = '27';
   let installEvent = null;
   const installBanner = document.createElement('section');
   installBanner.className = 'install-banner';
-  installBanner.setAttribute('aria-label', 'Install Kambaya');
+  installBanner.setAttribute('aria-label', 'Install Kanbaya');
   installBanner.hidden = true;
-  installBanner.innerHTML = '<div><strong>Install Kambaya</strong><p role="status">Keep your boards close at hand.</p></div><div class="install-actions"><button class="btn primary" type="button" data-install-trigger>Install</button><button class="icon-btn" type="button" aria-label="Dismiss install banner">✕</button></div>';
+  installBanner.innerHTML = '<div><strong>Install Kanbaya</strong><p role="status">Keep your boards close at hand.</p></div><div class="install-actions"><button class="btn primary" type="button" data-install-trigger>Install</button><button class="icon-btn" type="button" aria-label="Dismiss install banner">✕</button></div>';
   document.body.append(installBanner);
   const installMessage = installBanner.querySelector('p');
   const installUrl = new URL(location.href);
@@ -14,8 +14,8 @@
     installBanner.hidden = window.matchMedia('(display-mode: standalone)').matches;
   }
   const notifyInstallChange = () => {
-    window.kambayaInstallAvailable = !!installEvent;
-    window.dispatchEvent(new Event('kambaya-install-change'));
+    window.kanbayaInstallAvailable = !!installEvent;
+    window.dispatchEvent(new Event('kanbaya-install-change'));
   };
   window.addEventListener('beforeinstallprompt', event => {
     event.preventDefault();
@@ -40,7 +40,7 @@
       const result = await prompt.prompt();
       if (result.outcome === 'accepted') installBanner.hidden = true;
     } catch (error) {
-      console.error('Kambaya: could not open the installation prompt', error);
+      console.error('Kanbaya: could not open the installation prompt', error);
       installBanner.hidden = false;
       installMessage.textContent = 'Could not open the install prompt. Use your browser menu to install the app.';
     } finally {
@@ -67,14 +67,14 @@
     const panel = document.createElement('section');
     panel.className = 'storage-error update-notice';
     const text = document.createElement('p');
-    text.textContent = 'An update is available. Save and close other Kambaya tabs before activating it.';
+    text.textContent = 'An update is available. Save and close other Kanbaya tabs before activating it.';
     const button = document.createElement('button');
     button.className = 'btn';
     button.textContent = 'Activate update and reload';
     button.onclick = async () => {
       button.disabled = true;
       try {
-        if (window.kambayaFlush) await window.kambayaFlush();
+        if (window.kanbayaFlush) await window.kanbayaFlush();
         if (!registration.waiting) throw new Error('The update is not ready yet. Reload to try again.');
         navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
         registration.waiting.postMessage({ type: 'ACTIVATE' });
@@ -100,13 +100,13 @@
       }
       try { registration = await navigator.serviceWorker.register('sw.js'); }
       catch (error) {
-        console.warn('Kambaya: could not register offline support; checking the previous installation.', error);
+        console.warn('Kanbaya: could not register offline support; checking the previous installation.', error);
         registration = await navigator.serviceWorker.getRegistration();
         if (!registration) throw error;
       }
       try { await registration.update(); }
       catch (error) {
-        console.warn('Kambaya: could not check for updates; using the installed version.', error);
+        console.warn('Kanbaya: could not check for updates; using the installed version.', error);
         if (!navigator.serviceWorker.controller) throw error;
       }
       const current = navigator.serviceWorker.controller;
@@ -130,9 +130,9 @@
     for (const script of scripts) await load(script);
   }
   boot().catch(error => {
-    console.error('Kambaya: startup', error);
+    console.error('Kanbaya: startup', error);
     const app = document.querySelector('#app');
-    app.textContent = 'Could not start Kambaya: ' + error.message + '. Your data has not been deleted. Reload to try again.';
+    app.textContent = 'Could not start Kanbaya: ' + error.message + '. Your data has not been deleted. Reload to try again.';
     app.setAttribute('role', 'alert');
   });
 })();

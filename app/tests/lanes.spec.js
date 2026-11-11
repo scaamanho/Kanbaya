@@ -1,21 +1,16 @@
 const { test, expect } = require('@playwright/test');
-const { fixture } = require('./fixtures');
+const { fixture, seed: seedDatabase } = require('./fixtures');
 
 async function seed(page, data = fixture(8)) {
   page.laneErrors = [];
   page.on('pageerror', error => page.laneErrors.push(error.message));
-  await page.addInitScript(data => {
-    if (!sessionStorage.getItem('fixture')) {
-      localStorage.setItem('kanbaya-pwa:v1', JSON.stringify(data));
-      sessionStorage.setItem('fixture', 'yes');
-    }
-  }, data);
+  await seedDatabase(page, data);
   await page.goto('/app/#/b/board0');
   await expect(page.locator('.list').first()).toBeVisible();
 }
 async function db(page, fn) {
   return page.evaluate(async source => {
-    const store = new KambayaStore();
+    const store = new KanbayaStore();
     try {
       await store.db.open();
       return await new Function('store', 'return (' + source + ')(store)')(store);
@@ -312,7 +307,7 @@ test('lane options survive JSON export/import and the full menu fits mobile heig
   await page.locator('#import-file').setInputFiles({
     name: 'invalid-lanes.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(invalid))
   });
-  await expect(page.locator('.toast')).toContainText('not a valid Kambaya backup');
+  await expect(page.locator('.toast')).toContainText('not a valid Kanbaya backup');
   expect(await db(page, store => store.db.boards.count())).toBe(2);
   invalid.boards[0].lists[0].wipLimit = 1;
   await page.locator('#import-file').setInputFiles({
