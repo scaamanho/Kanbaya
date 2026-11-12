@@ -26,7 +26,9 @@ for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 800 });
     await page.goto('/project/');
     const links = page.locator('[data-screenshot]');
-    await expect(links).toHaveCount(5);
+    await expect(links).toHaveCount(7);
+    await expect(links.locator('img[src="assets/board_timeline.png"]')).toHaveCount(1);
+    await expect(links.locator('img[src="assets/board_menu.png"]')).toHaveCount(1);
 
     for (const [index, link] of (await links.all()).entries()) {
       const source = await link.getAttribute('href');

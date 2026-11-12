@@ -59,6 +59,105 @@ test('valid empty state stays empty across restarts', async ({ page }) => {
   await expect(page.locator('.empty')).toBeVisible();
   expect(await db(page, store => store.db.boards.count())).toBe(0);
 });
+test('optional start dates survive restart and backups without changing undated exports', async ({ page }) => {
+  const data = fixture(8);
+  const cards = data.boards[0].lists[0].cards;
+  cards[0].startDate = '2026-11-20';
+  cards[2].startDate = '';
+  cards[3].startDate = null;
+  await prepareDatabase(page, data);
+  const result = await db(page, async store => {
+    const state = await store.readState();
+    const board = state.boards[0];
+    let detailReads = 0;
+    const reading = row => { detailReads++; return row; };
+    store.db.cardDetails.hook('reading', reading);
+    const keys = await store.listKeys(board, board.lists[0], { status: [], due: [], labels: [] }, '');
+    const rangedKeys = await store.listKeys(board, null, { status: [], due: [], labels: [] }, '', false, ['2026-11-11', '2026-11-11']);
+    store.db.cardDetails.hook('reading').unsubscribe(reading);
+    const summaries = await store.summaries(keys);
+    const detail = await store.card('board0', 'card0');
+    const exported = await store.exportState();
+    const backup = await store.exportBackup();
+    const parsed = await store.parseBackup(backup.blob);
+    return { keys, rangedKeys, detailReads, summaries, detail, exported, backup: parsed.data };
+  });
+  expect(result.detailReads).toBe(0);
+  expect(result.keys[0]).toMatchObject({ id: 'card0', startDate: '2026-11-20' });
+  expect(result.rangedKeys).toEqual(result.keys);
+  for (const key of result.keys.slice(1)) expect(key).not.toHaveProperty('startDate');
+  expect(result.summaries[0].startDate).toBe('2026-11-20');
+  expect(result.detail.startDate).toBe('2026-11-20');
+  const expected = structuredClone(data);
+  delete expected.boards[0].lists[0].cards[2].startDate;
+  delete expected.boards[0].lists[0].cards[3].startDate;
+  expect(result.exported).toEqual(expected);
+  expect(result.backup.boards).toEqual(expected.boards);
+  const reopened = await db(page, store => store.exportState());
+  expect(reopened).toEqual(expected);
+});
+test('summary-only start date edits persist without detail writes and undo restores cleared dates', async ({ page }) => {
+  await prepareDatabase(page, fixture(4));
+  const result = await db(page, async store => {
+    const state = await store.readState();
+    const list = state.boards[0].lists[0];
+    list.cards = await store.summaries([{ boardId: 'board0', id: 'card0' }]);
+    store.adopt(state);
+    list.cards[0].startDate = '2026-11-20';
+    const saved = await store.commit(state);
+    const detail = await store.card('board0', 'card0');
+    list.cards[0].title = 'Edited summary';
+    await store.commit(state);
+    const retained = await store.card('board0', 'card0');
+    list.cards[0].startDate = '';
+    const cleared = await store.commit(state);
+    const undated = await store.exportState();
+    await store.undo(cleared);
+    return { saved, detail, retained, undated, restored: await store.exportState() };
+  });
+  expect(result.saved.entries.filter(entry => ['cards', 'cardDetails'].includes(entry.table)).map(entry => entry.table)).toEqual(['cards']);
+  expect(result.detail).toMatchObject({ startDate: '2026-11-20', desc: 'Descripción 0' });
+  expect(result.retained).toMatchObject({ startDate: '2026-11-20', title: 'Edited summary' });
+  expect(result.undated.boards[0].lists[0].cards[0]).not.toHaveProperty('startDate');
+  expect(result.restored.boards[0].lists[0].cards[0]).toMatchObject({ startDate: '2026-11-20', title: 'Edited summary' });
+});
+test('caller-managed imports, duplication and move retain start dates and full details', async ({ page }) => {
+  await prepareDatabase(page, fixture(4));
+  const result = await db(page, async store => {
+    const imported = await store.exportState();
+    imported.boards[0].lists[0].cards[0].startDate = '2026-11-01';
+    const { data } = await store.parseBackup(new Blob([JSON.stringify(imported)]));
+    const state = await store.readState();
+    for (const board of state.boards) await store.hydrate(board);
+    store.adopt(state);
+    state.boards[0].lists[0].cards[0] = data.boards[0].lists[0].cards[0];
+    await store.preparePositions(state);
+    await store.commit(state);
+    const source = await store.card('board0', 'card0');
+    const copy = { ...structuredClone(source), id: 'start-date-copy' };
+    state.boards[0].lists[1].cards.push(copy);
+    await store.preparePositions(state);
+    await store.commit(state);
+    const moved = state.boards[0].lists[0].cards.shift();
+    state.boards[0].lists[1].cards.push(moved);
+    await store.preparePositions(state);
+    await store.commit(state);
+    const deleted = state.boards[0].lists[1].cards.splice(0, 1)[0];
+    const change = await store.commit(state);
+    await store.undo(change);
+    return { deletedId: deleted.id, state: await store.exportState() };
+  });
+  expect(result.deletedId).toBe('start-date-copy');
+  const cards = result.state.boards[0].lists[1].cards;
+  expect(cards.map(card => card.id)).toEqual(['start-date-copy', 'card0']);
+  for (const card of cards) {
+    expect(card).toMatchObject({
+      startDate: '2026-11-01', desc: 'Descripción 0',
+      checklist: [{ id: 'check0', text: 'Revisar 0', done: true }],
+      comments: [{ id: 'comment0', text: 'Nota 0', created: 1 }]
+    });
+  }
+});
 test('duplicate card ids fail initialization atomically', async ({ page }) => {
   const data = fixture(6);
   data.boards[0].lists[0].cards[1].id = data.boards[0].lists[0].cards[0].id;
@@ -183,7 +282,7 @@ test('deleting a list cascades details and undo restores all records', async ({ 
 test('calendar bounds DOM even with 1000 events on a single date', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-11T12:00:00') });
   await seed(page, fixture(2000));
-  await page.locator('[data-act="toggle-view"]').click();
+  await page.locator('[data-act="show-calendar"]').click();
   const events = page.locator('[data-virtual-day="2026-11-11"]');
   await expect(events.locator('.cal-event').first()).toBeVisible();
   expect(await events.locator('.cal-event').count()).toBeLessThanOrEqual(60);
@@ -420,7 +519,7 @@ test('card completion drives deadline filters, statistics and calendar status', 
     return { ids: keys.map(key => key.id), overdue: stats.overdue, completed: stats.completed };
   });
   expect(result).toEqual({ ids: ['card2'], overdue: 1, completed: 1 });
-  await page.locator('[data-act="toggle-view"]').click();
+  await page.locator('[data-act="show-calendar"]').click();
   await expect(page.locator('.cal-event').filter({ hasText: 'Tarea 0' })).toHaveClass(/done/);
   await expect(page.locator('.cal-event').filter({ hasText: 'Tarea 2' })).not.toHaveClass(/done/);
 });
@@ -564,19 +663,21 @@ test('a cached previous release detects the deployed update on startup and prese
     page.getByRole('button', { name: 'Activate update and reload' }).click()
   ]);
   await expect(page.locator('.update-notice')).toHaveCount(0);
-  await expect(page.locator('.product-version')).toHaveText('Kanbaya v1.1.0');
+  await expect(page.locator('.app-footer')).toHaveCount(0);
   await expect(page.locator('.card').filter({ hasText: 'Saved before updating' })).toBeVisible();
   expect(await db(page, store => store.db.cards.count())).toBe(4);
   const cachesAfterUpdate = await page.evaluate(() => caches.keys());
-  expect(cachesAfterUpdate).toContain('kanbaya-pwa-v36');
+  expect(cachesAfterUpdate).toContain('kanbaya-pwa-v39');
   expect(cachesAfterUpdate).not.toContain('kanbaya-pwa-v27');
-  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '36'))).toBe(true);
+  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '39'))).toBe(true);
 
   await context.setOffline(true);
   await page.reload();
-  await expect(page.locator('.product-version')).toHaveText('Kanbaya v1.1.0');
+  await expect(page.locator('.app-footer')).toHaveCount(0);
   await expect(page.locator('.card').filter({ hasText: 'Saved before updating' })).toBeVisible();
   expect(await db(page, store => store.db.cards.count())).toBe(4);
+  await page.getByRole('link', { name: 'Home', exact: true }).click();
+  await expect(page.locator('.product-version')).toHaveText(/^Kanbaya v\d+\.\d+\.\d+$/);
 });
 test('an installed legacy worker cannot mix old app code with the new shell', async ({ page }) => {
   await prepareDatabase(page, { version: 2, theme: 'auto', boards: [], templates: [] });

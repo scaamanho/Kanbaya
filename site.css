@@ -89,6 +89,7 @@ h1 span, h2 span { color: #a9c8ff; }
 .screen-filter img { width: 220%; max-width: none; margin-left: -120%; }
 .screen-card img { width: 170%; max-width: none; margin-left: -35%; }
 .screen-statistics img { width: 180%; max-width: none; margin-left: -40%; }
+.screen-menu img { width: 220%; max-width: none; margin-left: -120%; }
 .more-features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 25px; margin-top: 35px; }
 .more-features > div { display: flex; align-items: flex-start; gap: 13px; }
 .more-features > div > span { display: grid; flex: none; width: 30px; height: 30px; place-items: center; border: 1px solid #4d6380; border-radius: 7px; color: #a9c8ff; }

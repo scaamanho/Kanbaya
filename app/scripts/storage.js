@@ -63,6 +63,7 @@
             const row = {
               boardId: b.id, listId: l.id, id: c.id, position: positions[ci],
               title: c.title, labels: clone(c.labels), due: c.due, dueDone: c.dueDone, priority: c.priority,
+              ...(c.startDate ? { startDate: c.startDate } : {}),
               completed: c.completed, recurrence: c.recurrence, theme: c.theme,
               ...(c.imageIds ? { imageIds: clone(c.imageIds), coverImageId: c.coverImageId || null } : {}),
               archived: c.archived, archivedKey: Number(c.archived), created: c.created,
@@ -174,6 +175,32 @@
                 await this.db.cards.update([board.id, card.id], { priority: priorities[title] });
                 updated = true;
               }
+            }
+          }
+        }
+        if (updated) {
+          const revision = await this.db.settings.get('revision');
+          await this.db.settings.put({ key: 'revision', value: (revision?.value || 0) + 1 });
+        }
+        await this.db.settings.put({ key: marker, value: true });
+        return updated;
+      });
+      if (changed) this.revision++;
+    }
+    async applyWelcomeDates(boardName, titles, makeDates) {
+      const marker = 'welcome-dates-v1';
+      const changed = await this.db.transaction('rw', this.db.settings, this.db.boards, this.db.cards, async () => {
+        if (await this.db.settings.get(marker)) return false;
+        const board = (await this.db.boards.toArray()).find(item => item.name === boardName);
+        let updated = false;
+        if (board) {
+          const cards = await this.db.cards.where('boardId').equals(board.id).toArray();
+          if (titles.every(title => cards.filter(card => card.title === title).length === 1)) {
+            const undated = cards.filter(card => titles.includes(card.title) && !card.startDate && !card.due);
+            const dates = undated.length ? makeDates(board.created) : null;
+            for (const card of undated) {
+              await this.db.cards.update([board.id, card.id], { ...dates[card.title], dueDone: !!card.completed });
+              updated = true;
             }
           }
         }
@@ -546,7 +573,7 @@
         ? this.db.cards.where('[boardId+archivedKey+due]').between([board.id, 0, range[0]], [board.id, 0, range[1]], true, true)
         : this.db.cards.where('[boardId+listId+archivedKey+position]').between([board.id, list.id, Number(archived), Dexie.minKey], [board.id, list.id, Number(archived), Dexie.maxKey]);
       const keys = [];
-      await collection.each(c => { if (matches(c)) keys.push({ id: c.id, boardId: c.boardId, listId: c.listId, position: c.position, due: c.due }); });
+      await collection.each(c => { if (matches(c)) keys.push({ id: c.id, boardId: c.boardId, listId: c.listId, position: c.position, due: c.due, ...(c.startDate ? { startDate: c.startDate } : {}) }); });
       if (range) {
         const order = new Map(board.lists.map((l, i) => [l.id, i]));
         keys.sort((a, b) => order.get(a.listId) - order.get(b.listId) || a.position - b.position);

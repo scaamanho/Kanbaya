@@ -16,9 +16,9 @@ Third-party components retain their own licenses; the project license does not r
 
 ## Running and deploying
 
-The product website lives at the repository root, with screenshots in `assets/`. The application and its development files live in `app/`.
+The product website lives at the repository root, with screenshots in `assets/`. Its gallery includes filters, calendar, card details, statistics, timeline, and board tools; each screenshot opens at full size. The application and its development files live in `app/`.
 
-The application displays **Kanbaya v1.1.0** as non-interactive, secondary-colored text in the bottom-left footer on the home screen and boards. It does not open a dialog or navigate. On the home screen, the same footer contains the **Buy Me a Coffee** button on the right, without overlaying content. The product version is defined by `PRODUCT_VERSION` in `app/scripts/app.js` and is independent of worker/cache, database and backup versions.
+The home screen displays the product version as non-interactive, secondary-colored text in the bottom-left footer. It does not open a dialog or navigate. The same footer contains the **Buy Me a Coffee** button on the right, without overlaying content. Boards do not show the footer. The product version is defined by `PRODUCT_VERSION` in `app/scripts/app.js` and is independent of worker/cache, database and backup versions.
 
 Serve the repository directory over HTTPS, or localhost for development. For example, with Node installed:
 
@@ -80,19 +80,23 @@ WIP is enforced inside the same IndexedDB transaction as card changes, for manua
 
 Lane options are optional metadata in the existing `lists` store (`collapsed`, `wipLimit`); no schema upgrade or card rewrite is needed. WIP counts are derived from persisted cards, and options survive reloads, backups and import. The menu scrolls within the viewport on short/mobile screens. Expand a collapsed lane before dropping cards into it, or use **Move to list** / **Move all cards to...**.
 
-[virtual.js](app/scripts/virtual.js) maintains windows of up to 60 cards per list, events per day, or archive/template rows, with measured heights, scroll overscan, and keyboard focus.
+[virtual.js](app/scripts/virtual.js) maintains windows of up to 60 cards per list, events per day, timeline, or archive/template rows, with measured heights, scroll overscan, and keyboard focus.
 
 Startup queries metadata and counters. Boards retain result keys/positions and summary windows; full details are read when a card is opened. Windows for inactive boards are released from memory. Global operations that need all content, such as duplicating, sorting, archiving all cards, or exporting, load it temporarily: they do not operate only on visible cards.
 
 **Board menu > Statistics** summarizes all non-archived cards on the current board, including offscreen cards, regardless of filters. It shows breakdowns by list, due date, label and priority; each section can independently switch between bars and a pie chart while the statistics are open. A card with several labels is counted under each; unlabelled cards have their own row. The label pie represents label assignments and unlabelled cards, not the share of cards. Completed cards are grouped separately in the due-date breakdown; the next-seven-days group excludes today and includes the seventh day. Priority includes cards without a priority.
 
-The calendar queries the 42-day range once and groups the results. Days with many events scroll internally. Search preserves substring matching in titles, descriptions, labels, checklists, and comments; it uses derived text and current label names. **This is not a full-text index**: it must scan candidates, so its cost still grows with the number of cards. Results from previous views or searches are discarded.
+Use the **Board**, **Calendar**, and **Timeline** buttons to switch directly between views; the active view is highlighted. The calendar queries the 42-day range once and groups the results. Days with many events scroll internally. Search preserves substring matching in titles, descriptions, labels, checklists, and comments; it uses derived text and current label names. **This is not a full-text index**: it must scan candidates, so its cost still grows with the number of cards. Results from previous views or searches are discarded.
+
+Use **Timeline** on a board to see a month at day resolution. Cards with both dates appear as inclusive bars, including intervals extending beyond the month; cards with only a start or due date appear as milestones. Cards without either date appear under **Unscheduled cards**, and archived cards are excluded. Search and filters apply to both sections. Navigate months with the arrows or **Today**. Drag a bar or milestone to move its date(s), or drag a visible end of a bar to resize it; ends cannot cross. Escape or a cancelled pointer gesture discards the drag. Open a card to edit dates with the keyboard. Timeline lists are virtualized and include offscreen cards.
+
+The initial sample board has date ranges within its creation month. An existing board named **My first board** with all five original card titles receives those dates once, only on cards that have neither date; existing dates are never replaced. Clearing dates later does not restore them.
 
 ## Card attachments and description images
 
-The card sidebar places **Priority** above **Status & due date**, collapsed by default and styled like **Card appearance**. Its single **Mark as complete** checkbox completes or reopens the card, with or without a due date; completion also resolves its deadline. The collapsed heading shows **Completed** for finished cards. The optional date can be edited or removed without changing completion, and the section stays expanded while editing. Checklists remain independent.
+The card sidebar places **Priority** above **Status & due date**, collapsed by default and styled like **Card appearance**. Its single **Mark as complete** checkbox completes or reopens the card, with or without a due date; completion also resolves its deadline. The collapsed heading shows **Completed** for finished cards. Optional start and due dates can be edited or removed independently without changing completion; the start cannot be later than the due date. The section stays expanded while editing. Checklists remain independent. Start dates are preserved in backups and duplicates; older backups without them remain compatible.
 
-The **Repeat task** control is temporarily hidden. Existing recurrence settings remain stored: completing a recurring card with a due date advances to its next date and keeps the card pending.
+The **Repeat task** control is temporarily hidden. Existing recurrence settings remain stored: completing a recurring card with a due date advances to its next date, shifts its start date by the same number of days if present, and keeps the card pending.
 
 Open a card and use **Attachments > From your device** (multiple files supported, any file type) or **Add from URL**. URL attachments are downloaded once; the server must allow CORS and HTTPS pages cannot fetch insecure HTTP resources. Downloads time out after 30 seconds. Once saved, attachments are available offline.
 
@@ -124,7 +128,7 @@ When opening `app/` on the same origin after using version 23 at the repository 
 
 When changing production resources, update the version in `app/scripts/boot.js`, `app/sw.js`, their precache entries, and the versioned references in `app/index.html` together. Do not change a published schema under the same version number: add a new Dexie version and its migration.
 
-Product **1.1.0**, including Google Drive backups, uses coordinated asset/cache version **36**, so earlier installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database migration or reinstall is needed for this release.
+Product **1.1.0**, including Google Drive backups, uses coordinated asset/cache version **39**, so earlier installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database schema migration or reinstall is needed for this release.
 
 ## Backups and recovery
 

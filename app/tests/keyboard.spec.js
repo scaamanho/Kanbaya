@@ -7,6 +7,28 @@ async function seed(page, data = fixture(8)) {
   await expect(page.locator('.board-title')).toHaveValue('Tablero 0');
 }
 
+test('view buttons select their named view directly and indicate the active view', async ({ page }) => {
+  await seed(page);
+  const views = [
+    { name: 'Board', content: '.lists' },
+    { name: 'Calendar', content: '.calendar' },
+    { name: 'Timeline', content: '.timeline' }
+  ];
+  for (const sequence of [views, [views[0], views[2], views[1]], [views[2], views[0], views[1]]]) {
+    for (const selected of sequence) {
+      await page.getByRole('button', { name: selected.name, exact: true }).click();
+      await expect(page.locator(selected.content)).toBeVisible();
+      for (const view of views) {
+        await expect(page.getByRole('button', { name: view.name, exact: true })).toHaveAttribute('aria-pressed', String(view === selected));
+      }
+      await page.getByRole('button', { name: selected.name, exact: true }).click();
+      await expect(page.locator(selected.content)).toBeVisible();
+    }
+  }
+  await page.setViewportSize({ width: 320, height: 800 });
+  for (const view of views) await expect(page.getByRole('button', { name: view.name, exact: true })).toBeVisible();
+});
+
 test('board shortcuts search, filter, switch views and show the responsive guide', async ({ page }) => {
   await seed(page);
   await page.locator('body').press('/');

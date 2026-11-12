@@ -1,43 +1,48 @@
 const { test, expect } = require('@playwright/test');
 const { fixture, seed } = require('./fixtures');
-test('product version is non-interactive bottom-left text on boards and home at every screen size', async ({ page }) => {
+test('board views have no footer while the home footer keeps the product version', async ({ page }) => {
   await seed(page, fixture(4));
   const version = page.locator('.app-footer .product-version');
-  for (const view of ['board', 'home']) {
-    if (view === 'home') await page.getByRole('link', { name: 'Home', exact: true }).click();
+  for (const view of ['Board', 'Calendar', 'Timeline']) {
+    await page.getByRole('button', { name: view, exact: true }).click();
     for (const width of [1280, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
-      await expect(version).toHaveText('Kanbaya v1.1.0');
-      await expect(version).toBeInViewport();
-      const bounds = await version.evaluate(el => {
-        const footer = el.closest('footer');
-        const rect = footer.getBoundingClientRect();
-        const text = el.getBoundingClientRect();
-        const content = footer.previousElementSibling.getBoundingClientRect();
-        const support = footer.querySelector('.support-link')?.getBoundingClientRect();
-        return { left: rect.left, bottom: rect.bottom, height: innerHeight,
-          contentBottom: content.bottom, top: rect.top, textRight: text.right,
-          supportTop: support?.top, supportBottom: support?.bottom, supportLeft: support?.left,
-          supportRight: support?.right, viewport: innerWidth,
-          interactive: !!el.closest('a, button, [data-act], [tabindex]') };
-      });
-      expect(bounds.left).toBe(0);
-      expect(Math.abs(bounds.bottom - bounds.height)).toBeLessThanOrEqual(1);
-      expect(bounds.contentBottom).toBeLessThanOrEqual(bounds.top + 1);
-      if (view === 'home') {
-        expect(bounds.supportTop).toBeGreaterThanOrEqual(bounds.top);
-        expect(bounds.supportBottom).toBeLessThanOrEqual(bounds.bottom);
-        expect(bounds.textRight).toBeLessThan(bounds.supportLeft);
-        expect(bounds.supportRight).toBeLessThanOrEqual(bounds.viewport);
-      }
-      expect(bounds.interactive).toBe(false);
-      const url = page.url();
-      await version.click();
-      await expect(page).toHaveURL(url);
-      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await expect(page.locator('.app-footer')).toHaveCount(0);
+      const gap = await page.locator('.board').evaluate(el => Math.abs(innerHeight - el.getBoundingClientRect().bottom));
+      expect(gap).toBeLessThanOrEqual(1);
     }
   }
+  await page.getByRole('link', { name: 'Home', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your boards' })).toBeVisible();
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(version).toHaveText(/^Kanbaya v\d+\.\d+\.\d+$/);
+    await expect(version).toBeInViewport();
+    const bounds = await version.evaluate(el => {
+      const footer = el.closest('footer');
+      const rect = footer.getBoundingClientRect();
+      const text = el.getBoundingClientRect();
+      const content = footer.previousElementSibling.getBoundingClientRect();
+      const support = footer.querySelector('.support-link').getBoundingClientRect();
+      return { left: rect.left, bottom: rect.bottom, height: innerHeight,
+        contentBottom: content.bottom, top: rect.top, textRight: text.right,
+        supportTop: support.top, supportBottom: support.bottom, supportLeft: support.left,
+        supportRight: support.right, viewport: innerWidth,
+        interactive: !!el.closest('a, button, [data-act], [tabindex]') };
+    });
+    expect(bounds.left).toBe(0);
+    expect(Math.abs(bounds.bottom - bounds.height)).toBeLessThanOrEqual(1);
+    expect(bounds.contentBottom).toBeLessThanOrEqual(bounds.top + 1);
+    expect(bounds.supportTop).toBeGreaterThanOrEqual(bounds.top);
+    expect(bounds.supportBottom).toBeLessThanOrEqual(bounds.bottom);
+    expect(bounds.textRight).toBeLessThan(bounds.supportLeft);
+    expect(bounds.supportRight).toBeLessThanOrEqual(bounds.viewport);
+    expect(bounds.interactive).toBe(false);
+    const url = page.url();
+    await version.click();
+    await expect(page).toHaveURL(url);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  }
 });
 
 test('preserves legacy card details, search and calendar contracts', async ({ page }) => {
@@ -54,7 +59,7 @@ test('preserves legacy card details, search and calendar contracts', async ({ pa
   await expect(page.locator('.card')).toContainText('Tarea 18');
   await page.locator('[data-act="clear-filters"]').click();
   await page.locator('[data-act="close-filters"]').first().click();
-  await page.locator('[data-act="toggle-view"]').click();
+  await page.locator('[data-act="show-calendar"]').click();
   await expect(page.locator('.cal-day')).toHaveCount(42);
 });
 test('status and due date collapse below priority and fit desktop and mobile', async ({ page }) => {
@@ -220,6 +225,69 @@ test('new My first board shows priorities on its welcome cards', async ({ page }
   await expect(page.locator('.card').filter({ hasText: 'Create your own board' }).locator('.priority-badge')).toHaveText('▲ High');
   await expect(page.locator('.card').filter({ hasText: 'Your data is saved only in this browser' }).locator('.priority-badge')).toHaveText('▲ Critical');
   await expect(page.locator('.card').filter({ hasText: 'Install the app' }).locator('.priority-badge')).toHaveText('▲ Low');
+});
+for (const date of ['2025-02-28T12:00:00', '2024-02-29T12:00:00', '2026-12-31T12:00:00']) {
+  test(`new sample cards have visible date ranges in their creation month ${date.slice(0, 7)}`, async ({ page }) => {
+    await page.clock.setFixedTime(new Date(date));
+    await page.goto('/app/');
+    await page.locator('.board-tile').filter({ hasText: 'My first board' }).click();
+    await page.getByRole('button', { name: 'Timeline', exact: true }).click();
+    await expect(page.locator('.timeline-bar')).toHaveCount(5);
+    const dates = await page.locator('.timeline-bar').evaluateAll(bars => bars.map(bar => [bar.dataset.start, bar.dataset.due]));
+    for (const [start, due] of dates) {
+      expect(start).toMatch(new RegExp(`^${date.slice(0, 7)}-\\d{2}$`));
+      expect(due).toMatch(new RegExp(`^${date.slice(0, 7)}-\\d{2}$`));
+      expect(start < due).toBe(true);
+      expect(Number(due.slice(-2))).toBeLessThanOrEqual(28);
+    }
+  });
+}
+test('existing sample cards gain dates once without changing dates already set', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-02-15T12:00:00'));
+  const data = fixture(10), board = data.boards[0];
+  board.name = 'My first board';
+  board.created = new Date('2026-01-01T12:00:00').getTime();
+  const cards = board.lists.flatMap(list => list.cards);
+  const titles = [
+    '👋 Welcome: drag this card to another list', 'Click a card to view its details',
+    'Create your own board with "＋ Create"', 'Your data is saved only in this browser',
+    'Install the app (browser menu → Install)'
+  ];
+  cards.forEach((card, index) => { card.title = titles[index]; card.due = ''; });
+  Object.assign(cards[0], { startDate: '2026-01-02', due: '2026-01-03' });
+  cards[1].startDate = '2026-01-08';
+  cards[2].due = '2026-01-20';
+  await seed(page, data);
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click();
+  await page.getByRole('button', { name: 'Previous month' }).click();
+  const bars = page.locator('.timeline-bar');
+  await expect(bars).toHaveCount(5);
+  await expect(bars.nth(0)).toHaveAttribute('data-start', '2026-01-02');
+  await expect(bars.nth(0)).toHaveAttribute('data-due', '2026-01-03');
+  await expect(bars.nth(1)).toHaveAttribute('data-start', '2026-01-08');
+  await expect(bars.nth(1)).toHaveAttribute('data-due', '');
+  await expect(bars.nth(2)).toHaveAttribute('data-start', '');
+  await expect(bars.nth(2)).toHaveAttribute('data-due', '2026-01-20');
+  await expect(bars.nth(3)).toHaveAttribute('data-start', '2026-01-15');
+  await expect(bars.nth(3)).toHaveAttribute('data-due', '2026-01-23');
+  await page.locator('.timeline-card').filter({ hasText: titles[3] }).click();
+  await page.locator('.due-date-section summary').click();
+  await page.getByRole('button', { name: 'Remove start date' }).click();
+  await page.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(page.getByLabel('Due date', { exact: true })).toHaveValue('');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.locator('.timeline-unscheduled')).toContainText(titles[3]);
+  await page.reload();
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click();
+  await expect(page.locator('.timeline-unscheduled')).toContainText(titles[3]);
+});
+test('a similarly named board without all sample cards is not given sample dates', async ({ page }) => {
+  const data = fixture(2);
+  data.boards[0].name = 'My first board';
+  data.boards[0].lists[0].cards[0].due = '';
+  await seed(page, data);
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click();
+  await expect(page.locator('.timeline-unscheduled')).toContainText('Tarea 0');
 });
 test('board statistics summarize only the selected board', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-11-10T12:00:00'));
@@ -437,7 +505,7 @@ test('uses English throughout the interface and for new default content', async 
   await expect(page.getByLabel('Keyword', { exact: true })).toHaveAttribute('placeholder', 'Enter a keyword…');
   await expect(page.getByText('No due date', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Done', exact: true }).click();
-  await page.locator('[data-act="toggle-view"]').click();
+  await page.locator('[data-act="show-calendar"]').click();
   await expect(page.locator('.cal-week strong')).toHaveText(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
   const expectedMonth = await page.evaluate(() => new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
   await expect(page.locator('.calendar-head h2')).toHaveText(expectedMonth);

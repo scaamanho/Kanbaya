@@ -1,7 +1,7 @@
 'use strict';
 /* Kanbaya PWA. Persistencia transaccional local con Dexie. */
 (() => {
-  const PRODUCT_VERSION = '1.1.0';
+  const PRODUCT_VERSION = '1.2.0';
   const PALETTE = ['#4bce97', '#f5cd47', '#fea362', '#f87168', '#9f8fef', '#579dff', '#6cc3e0', '#94c748', '#e774bb', '#8c9bab'];
   const PRIORITIES = [{ value: '', label: 'No priority' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'critical', label: 'Critical' }];
   const WELCOME_PRIORITIES = {
@@ -11,6 +11,7 @@
     'Your data is saved only in this browser': 'critical',
     'Install the app (browser menu → Install)': 'low'
   };
+  const WELCOME_DAY_RANGES = [[1, 6], [4, 11], [9, 16], [15, 23], [22, 28]];
   const EMOJIS = ['😀', '😊', '😍', '👍', '🙌', '✅', '⭐', '🔥', '🎯', '🚀', '💡', '📌', '📅', '⏰', '🎉', '🌴', '☀️', '🌱', '💪', '❤️', '📝', '📚', '💻', '🏠', '🛒', '🎨'];
   const CUSTOM_COLORS = ['#ffffff', '#d9ebff', '#d7f5e8', '#ffe8c2', '#ffdce5', '#e9ddff', '#e8e8e8', '#343a40'];
   const BOARD_SHORTCUTS = [
@@ -49,6 +50,23 @@
     return new Date(y, m, Math.min(d, new Date(y, m + 1, 0).getDate()));
   }
   const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  function welcomeDates(created) {
+    const date = new Date(created);
+    if (!Number.isFinite(date.getTime())) throw new Error('The sample board has an invalid creation date.');
+    const year = date.getFullYear(), month = date.getMonth();
+    return Object.fromEntries(Object.keys(WELCOME_PRIORITIES).map((title, index) => {
+      const [start, end] = WELCOME_DAY_RANGES[index];
+      return [title, { startDate: dateKey(new Date(year, month, start)), due: dateKey(new Date(year, month, end)) }];
+    }));
+  }
+  const dateOrdinal = value => {
+    const [year, month, day] = value.split('-').map(Number);
+    const date = new Date(0);
+    date.setUTCFullYear(year, month - 1, day);
+    return date.getTime() / 86400000;
+  };
+  const shiftDate = (value, days) => new Date((dateOrdinal(value) + days) * 86400000).toISOString().slice(0, 10);
+  const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && shiftDate(value, 0) === value;
 
   /* ---------------- Modelo ---------------- */
   const mkLabels = () => PALETTE.slice(0, 6).map(color => ({ id: uid(), name: '', color }));
@@ -73,18 +91,22 @@
       id: String(l?.id || uid()), name: String(l?.name || 'List').slice(0, 100), theme: /^#[0-9a-f]{6}$/i.test(l?.theme) ? l.theme : '',
       ...(l?.collapsed ? { collapsed: true } : {}),
       ...(l?.wipLimit !== undefined ? { wipLimit: l.wipLimit } : {}),
-      cards: arr(l?.cards).map(c => ({
-        id: String(c?.id || uid()), title: String(c?.title || 'Untitled').slice(0, 500), desc: String(c?.desc || ''),
-        labels: arr(c?.labels).map(String),
-        due: /^\d{4}-\d{2}-\d{2}$/.test(c?.due) ? c.due : '', dueDone: !!c?.dueDone,
-        priority: PRIORITIES.some(p => p.value === c?.priority) ? c.priority : '', completed: !!c?.completed,
-        checklist: arr(c?.checklist).map(i => ({ id: String(i?.id || uid()), text: String(i?.text || ''), done: !!i?.done })),
-        comments: arr(c?.comments).map(x => ({ id: String(x?.id || uid()), text: String(x?.text || '').slice(0, 2000), created: Number(x?.created) || Date.now() })),
-        recurrence: ['daily', 'weekly', 'monthly'].includes(c?.recurrence) ? c.recurrence : '',
-        theme: /^#[0-9a-f]{6}$/i.test(c?.theme) ? c.theme : '',
-        ...(Array.isArray(c?.imageIds) ? { imageIds: c.imageIds.map(String), coverImageId: c.imageIds.includes(c.coverImageId) ? c.coverImageId : null } : {}),
-        archived: !!c?.archived, created: Number(c?.created) || Date.now()
-      }))
+      cards: arr(l?.cards).map(c => {
+        if (c?.startDate && (!validDate(c.startDate) || (c?.due && c.startDate > c.due))) throw new Error('Invalid card date range.');
+        return {
+          id: String(c?.id || uid()), title: String(c?.title || 'Untitled').slice(0, 500), desc: String(c?.desc || ''),
+          labels: arr(c?.labels).map(String),
+          due: /^\d{4}-\d{2}-\d{2}$/.test(c?.due) ? c.due : '', dueDone: !!c?.dueDone,
+          ...(c?.startDate ? { startDate: c.startDate } : {}),
+          priority: PRIORITIES.some(p => p.value === c?.priority) ? c.priority : '', completed: !!c?.completed,
+          checklist: arr(c?.checklist).map(i => ({ id: String(i?.id || uid()), text: String(i?.text || ''), done: !!i?.done })),
+          comments: arr(c?.comments).map(x => ({ id: String(x?.id || uid()), text: String(x?.text || '').slice(0, 2000), created: Number(x?.created) || Date.now() })),
+          recurrence: ['daily', 'weekly', 'monthly'].includes(c?.recurrence) ? c.recurrence : '',
+          theme: /^#[0-9a-f]{6}$/i.test(c?.theme) ? c.theme : '',
+          ...(Array.isArray(c?.imageIds) ? { imageIds: c.imageIds.map(String), coverImageId: c.imageIds.includes(c.coverImageId) ? c.coverImageId : null } : {}),
+          archived: !!c?.archived, created: Number(c?.created) || Date.now()
+        };
+      })
     }));
     return {
       id: String(b.id || uid()), name: String(b.name || 'Board').slice(0, 100),
@@ -130,6 +152,8 @@
     c4.labels = [b.labels[3].id];
     const c5 = mkCard('Install the app (browser menu → Install)');
     c5.priority = WELCOME_PRIORITIES[c5.title];
+    const dates = welcomeDates(b.created);
+    [c1, c2, c3, c4, c5].forEach(card => Object.assign(card, dates[card.title]));
     todo.cards.push(c1, c2, c3); doing.cards.push(c4); done.cards.push(c5);
     return { version: 2, theme: 'auto', boards: [b], templates: [] };
   }
@@ -139,7 +163,7 @@
   const ui = { q: '', boardQuery: '', filters: { status: [], due: [], labels: [] }, filterOpen: false, emojiOpen: false, emojiTarget: null, view: 'board', month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), composer: null, addingList: false, modal: null, focus: null, scrollBottom: null, scrollRight: false };
   let descriptionDraft = null;
   const hasDescriptionChanges = () => descriptionDraft && descriptionDraft.text !== descriptionDraft.original;
-  let saveT = null, toastT = null, drag = null, suppressClick = 0, renderCount = 0, menuEl = null, lastBoardId = null;
+  let saveT = null, toastT = null, drag = null, timelineDrag = null, suppressClick = 0, renderCount = 0, menuEl = null, lastBoardId = null;
   let storageUsage = null;
 
   let ready = false, failed = false, dirty = false, running = false, renderPending = false;
@@ -584,11 +608,13 @@
         <button class="icon-btn board-favorite-toggle" data-act="toggle-favorite" aria-label="${b.favorite ? `Remove ${esc(b.name)} from favorites` : `Add ${esc(b.name)} to favorites`}" aria-pressed="${!!b.favorite}" title="${b.favorite ? 'Remove from favorites' : 'Add to favorites'}">${b.favorite ? '★' : '☆'}</button>
         <span class="spacer"></span>
         <button class="btn sm filter-toggle ${activeFilters ? 'has-filters' : ''}" data-act="toggle-filters" aria-expanded="${ui.filterOpen}" aria-controls="filter-panel">☷ Filter${activeFilters ? `<span class="filter-count">${activeFilters}</span>` : ''}</button>
-        <button class="btn sm" data-act="toggle-view">${ui.view === 'calendar' ? '☷ Board' : '▦ Calendar'}</button>
+        <button class="btn sm view-button" data-act="show-board" aria-pressed="${ui.view === 'board'}"><span aria-hidden="true">☷</span> Board</button>
+        <button class="btn sm view-button" data-act="show-calendar" aria-pressed="${ui.view === 'calendar'}"><span aria-hidden="true">▦</span> Calendar</button>
+        <button class="btn sm view-button" data-act="show-timeline" aria-pressed="${ui.view === 'timeline'}"><span aria-hidden="true">▤</span> Timeline</button>
         <button class="btn sm" data-act="board-menu">☰ Menu</button>
         ${ui.filterOpen ? filterPanelHTML(b) : ''}
       </div>
-      ${ui.view === 'calendar' ? calendarHTML(b) : `<div class="board-scroll"><div class="lists">${listsHTML(b)}</div></div>`}</main>`;
+      ${ui.view === 'calendar' ? calendarHTML(b) : ui.view === 'timeline' ? timelineHTML() : `<div class="board-scroll"><div class="lists">${listsHTML(b)}</div></div>`}</main>`;
   }
 
   function filterPanelHTML(b) {
@@ -616,6 +642,43 @@
       return `<div class="cal-day ${d.getMonth() !== m ? 'outside' : ''} ${key === todayStr() ? 'today' : ''}"><span class="cal-num">${d.getDate()}</span><div class="cal-events" data-virtual-day="${key}"></div></div>`;
     }).join('');
     return `<section class="calendar"><div class="calendar-head"><button class="btn" data-act="month-prev" aria-label="Previous month">‹</button><h2>${month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2><button class="btn" data-act="month-next" aria-label="Next month">›</button><button class="btn sm" data-act="month-today">Today</button></div><div class="calendar-grid"><div class="cal-week">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(x => `<strong>${x}</strong>`).join('')}</div><div class="cal-cells">${cells}</div></div></section>`;
+  }
+
+  const TIMELINE_DAY_WIDTH = 36;
+  function timelineHTML() {
+    const month = ui.month, y = month.getFullYear(), m = month.getMonth();
+    const days = new Date(y, m + 1, 0).getDate();
+    const first = dateKey(new Date(y, m, 1));
+    const headers = Array.from({ length: days }, (_, index) => {
+      const date = new Date(y, m, index + 1);
+      return `<span class="${dateKey(date) === todayStr() ? 'today' : ''}">${index + 1}</span>`;
+    }).join('');
+    return `<section class="timeline" aria-label="Board timeline">
+      <div class="calendar-head"><button class="btn" data-act="month-prev" aria-label="Previous month">‹</button><h2>${month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2><button class="btn" data-act="month-next" aria-label="Next month">›</button><button class="btn sm" data-act="month-today">Today</button></div>
+      <p class="timeline-help">Drag a bar to move dates or drag its ends to resize. Open a card to edit dates with the keyboard.</p>
+      <div class="timeline-scroll"><div class="timeline-table" style="--timeline-width:${days * TIMELINE_DAY_WIDTH}px">
+        <div class="timeline-header"><span>Card</span><div class="timeline-days">${headers}</div></div>
+        <div class="timeline-window" data-timeline-first="${first}" data-timeline-days="${days}"></div>
+      </div></div>
+      <h3>Unscheduled cards</h3><div class="timeline-unscheduled"></div>
+    </section>`;
+  }
+
+  function timelineRowHTML(b, c, first, days) {
+    const start = c.startDate || c.due, end = c.due || c.startDate;
+    const left = Math.max(0, dateOrdinal(start) - dateOrdinal(first));
+    const right = Math.min(days - 1, dateOrdinal(end) - dateOrdinal(first));
+    const milestone = !c.startDate || !c.due;
+    const list = b.lists.find(l => l.id === c.listId);
+    return `<div class="timeline-row" data-virtual-id="${esc(c.id)}" tabindex="-1">
+      <button class="timeline-card" data-act="open-card" data-id="${esc(c.id)}" title="${esc(c.title)} — ${esc(list?.name || '')}"><strong>${esc(c.title)}</strong><small>${esc(list?.name || '')}</small></button>
+      <div class="timeline-track" style="--timeline-days:${days}">
+        <div class="timeline-bar ${milestone ? 'milestone' : ''} ${c.completed ? 'done' : ''}" style="left:${left * TIMELINE_DAY_WIDTH}px;width:${(right - left + 1) * TIMELINE_DAY_WIDTH}px" data-timeline-id="${esc(c.id)}" data-start="${esc(c.startDate || '')}" data-due="${esc(c.due || '')}" title="${esc(start)}${start === end ? '' : ' – ' + esc(end)}">
+          ${!milestone && start >= first ? '<span class="timeline-handle start" data-timeline-handle="start"></span>' : ''}
+          <span class="timeline-bar-label">${milestone ? '◆' : esc(c.title)}</span>
+          ${!milestone && dateOrdinal(end) < dateOrdinal(first) + days ? '<span class="timeline-handle end" data-timeline-handle="end"></span>' : ''}
+        </div>
+      </div></div>`;
   }
 
   function captureScroll() {
@@ -649,7 +712,7 @@
   function render() {
     if (!ready || failed) return;
     if (running) { renderPending = true; return; }
-    if (drag?.active) return;
+    if (drag?.active || timelineDrag?.active) return;
     windows.forEach(w => w.destroy()); windows = [];
     viewGeneration++;
     renderCount++;
@@ -661,15 +724,17 @@
     }
     const scrollBottom = ui.scrollBottom;
     const s = captureScroll();
+    const timelineScroll = lastBoardId === b?.id && $('.timeline') ? { x: $('.timeline-scroll').scrollLeft, y: $('.timeline').scrollTop } : null;
     const search = document.activeElement?.matches('.home-board-search') ? document.activeElement : null;
     const searchSelection = search ? { start: search.selectionStart, end: search.selectionEnd, direction: search.selectionDirection } : null;
     document.title = b ? `${b.name} · Kanbaya` : 'Kanbaya';
-    $('#app').innerHTML = topbarHTML() + (b ? boardHTML(b) : homeHTML()) + `<footer class="app-footer">
+    $('#app').innerHTML = topbarHTML() + (b ? boardHTML(b) : homeHTML() + `<footer class="app-footer">
       <span class="product-version">Kanbaya v${PRODUCT_VERSION}</span>
-      ${b ? '' : '<a class="support-link" href="https://www.buymeacoffee.com/scaamanho" target="_blank" rel="noopener noreferrer" aria-label="Buy Me a Coffee"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="100" height="30"></a>'}
-    </footer>`;
+      <a class="support-link" href="https://www.buymeacoffee.com/scaamanho" target="_blank" rel="noopener noreferrer" aria-label="Buy Me a Coffee"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="100" height="30"></a>
+    </footer>`);
     sizeBoardTitle();
     restoreScroll(s, b?.id);
+    if (timelineScroll && $('.timeline')) { $('.timeline-scroll').scrollLeft = timelineScroll.x; $('.timeline').scrollTop = timelineScroll.y; }
     lastBoardId = b?.id ?? null;
     if (b && ui.scrollRight) { const sc = $('.board-scroll'); sc.scrollLeft = sc.scrollWidth; }
     if (b && ui.scrollBottom) { const w = $(`.list[data-id="${ui.scrollBottom}"] .list-cards`); if (w) w.scrollTop = w.scrollHeight; }
@@ -717,7 +782,7 @@
           rowsByHost.set(host, rows); attach([...rowsByHost.values()].flat());
           if (drag?.active && drag.card) $$('[data-act="open-card"]', host).filter(el => el.dataset.id === drag.card.id).forEach(el => el.classList.add('drag-hidden'));
         },
-        paused: () => !valid(),
+        paused: () => !valid() || !!timelineDrag?.active,
         afterLayout: () => { if (drag?.active) reorder(); },
         error: storageError
       });
@@ -738,6 +803,19 @@
       const keys = await store.listKeys(b, null, filters, query, false, [days[0].dataset.virtualDay, days.at(-1).dataset.virtualDay]);
       await Promise.all(days.map(host => make(host, keys.filter(k => k.due === host.dataset.virtualDay), 'day:' + host.dataset.virtualDay,
         c => `<button class="cal-event ${c.completed ? 'done' : ''}" data-act="open-card" data-id="${c.id}" data-virtual-id="${c.id}" title="${esc(b.lists.find(l => l.id === c.listId)?.name)}">${esc(c.title)}</button>`, 32)));
+    }
+    const timeline = $('.timeline-window'), unscheduled = $('.timeline-unscheduled');
+    if (timeline && unscheduled) {
+      const groups = await Promise.all(b.lists.map(l => store.listKeys(b, l, filters, query)));
+      if (!valid()) return;
+      const keys = groups.flat(), first = timeline.dataset.timelineFirst, dayCount = Number(timeline.dataset.timelineDays);
+      const last = shiftDate(first, dayCount - 1);
+      const scheduled = keys.filter(k => (k.startDate || k.due) && (k.startDate || k.due) <= last && (k.due || k.startDate) >= first);
+      const undated = keys.filter(k => !k.startDate && !k.due);
+      if (scheduled.length) await make(timeline, scheduled, 'timeline:' + first, c => timelineRowHTML(b, c, first, dayCount), 44);
+      else timeline.innerHTML = '<p class="timeline-empty">No cards scheduled in this month.</p>';
+      if (undated.length) await make(unscheduled, undated, 'timeline:unscheduled', c => `<div class="timeline-undated-row" data-virtual-id="${esc(c.id)}" tabindex="-1"><button class="timeline-card" data-act="open-card" data-id="${esc(c.id)}"><strong>${esc(c.title)}</strong><small>${esc(b.lists.find(l => l.id === c.listId)?.name || '')}</small></button></div>`, 44);
+      else unscheduled.innerHTML = '<p class="timeline-empty">No unscheduled cards.</p>';
     }
     const archive = $('.archive-window:not(.templates-window)');
     if (archive) {
@@ -886,8 +964,11 @@ const answer = 42;
           <details class="modal-section due-date-section" ${m.dueOpen ? 'open' : ''}>
             <summary>Status &amp; due date${c.completed ? '<span class="completion-status">Completed</span>' : ''}</summary>
             <label class="check card-completion"><input type="checkbox" data-f="completed" ${c.completed ? 'checked' : ''}> Mark as complete</label>
+            <label class="due-date-label" for="card-start-date">Start date (optional)</label>
+            <input id="card-start-date" type="date" data-f="startDate" value="${esc(c.startDate || '')}" ${c.due ? `max="${esc(c.due)}"` : ''} aria-label="Start date">
+            ${c.startDate ? '<div class="due-date-actions"><button class="btn sm" data-act="clear-start">Remove start date</button></div>' : ''}
             <label class="due-date-label" for="card-due-date">Due date (optional)</label>
-            <input id="card-due-date" type="date" data-f="due" value="${c.due}" aria-label="Due date">
+            <input id="card-due-date" type="date" data-f="due" value="${esc(c.due)}" ${c.startDate ? `min="${esc(c.startDate)}"` : ''} aria-label="Due date">
             ${c.due ? '<div class="due-date-actions"><button class="btn sm" data-act="clear-due">Remove</button></div>' : ''}
           </details>
           <h4>Move to</h4>
@@ -1506,6 +1587,9 @@ const answer = 42;
     'open-archive'() { ui.modal = { type: 'archive', prev: ui.modal }; render(); },
     'open-templates'() { ui.modal = { type: 'templates', prev: ui.modal }; render(); },
     'toggle-view'() { ui.view = ui.view === 'board' ? 'calendar' : 'board'; render(); },
+    'show-board'() { if (ui.view !== 'board') { ui.view = 'board'; render(); } },
+    'show-calendar'() { if (ui.view !== 'calendar') { ui.view = 'calendar'; render(); } },
+    'show-timeline'() { if (ui.view !== 'timeline') { ui.view = 'timeline'; render(); } },
     'month-prev'() { ui.month = new Date(ui.month.getFullYear(), ui.month.getMonth() - 1, 1); render(); },
     'month-next'() { ui.month = new Date(ui.month.getFullYear(), ui.month.getMonth() + 1, 1); render(); },
     'month-today'() { const d = new Date(); ui.month = new Date(d.getFullYear(), d.getMonth(), 1); render(); },
@@ -1816,6 +1900,7 @@ const answer = 42;
       c.labels = c.labels.includes(id) ? c.labels.filter(x => x !== id) : [...c.labels, id]; save(); render();
     },
     'edit-labels'() { ui.modal = { type: 'labels', prev: ui.modal }; render(); },
+    'clear-start'() { const c = ctxCard()?.card; if (!c) return; delete c.startDate; save(); render(); },
     'clear-due'() { const c = ctxCard()?.card; if (!c) return; c.due = ''; c.dueDone = false; save(); render(); },
     'add-check'() {
       const inp = $('.add-check input'); const c = ctxCard()?.card; if (!c || !inp) return;
@@ -1999,10 +2084,24 @@ const answer = 42;
       if (t.value && (!x.card.imageIds?.includes(t.value) || !isImage(ui.modal.images?.find(image => image.id === t.value)))) return;
       mutate(() => { x.card.coverImageId = t.value || null; }, 'Cover changed');
     }
-    else if (f === 'due' && x) { x.card.due = t.value; x.card.dueDone = !!t.value && x.card.completed; save(); render(); }
+    else if ((f === 'due' || f === 'startDate') && x) {
+      const start = f === 'startDate' ? t.value : x.card.startDate;
+      const due = f === 'due' ? t.value : x.card.due;
+      if ((t.value && !validDate(t.value)) || (start && due && start > due)) {
+        render(); toast('Start date must not be later than the due date.'); return;
+      }
+      if (f === 'startDate') {
+        if (start) x.card.startDate = start; else delete x.card.startDate;
+      } else {
+        x.card.due = due; x.card.dueDone = !!due && x.card.completed;
+      }
+      save(); render();
+    }
     else if (f === 'completed' && x) {
       if (t.checked && x.card.recurrence && x.card.due) {
-        x.card.due = dateKey(advanceDate(x.card.due, x.card.recurrence));
+        const nextDue = dateKey(advanceDate(x.card.due, x.card.recurrence));
+        if (x.card.startDate) x.card.startDate = shiftDate(x.card.startDate, dateOrdinal(nextDue) - dateOrdinal(x.card.due));
+        x.card.due = nextDue;
         x.card.completed = false; x.card.dueDone = false;
         save(); render(); toast(`Next due date: ${fmtDate(x.card.due)}`);
       } else {
@@ -2024,7 +2123,7 @@ const answer = 42;
     const t = e.target;
     if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
     if (ready && !failed && !queued && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey &&
-        cur() && !ui.modal && !menuEl && !drag && !ui.composer && !ui.addingList &&
+        cur() && !ui.modal && !menuEl && !drag && !timelineDrag && !ui.composer && !ui.addingList &&
         !t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')) {
       const shortcut = BOARD_SHORTCUTS.find(shortcut => shortcut.key === e.key.toLowerCase());
       if (shortcut) {
@@ -2044,6 +2143,7 @@ const answer = 42;
     }
     if (e.key === 'Escape') {
       if (descriptionDraft?.imagePicker) { e.preventDefault(); run(() => A['toggle-description-images']()); return; }
+      if (timelineDrag) { e.preventDefault(); finishTimelineDrag(false); return; }
       if (drag?.active) { endDrag(false); return; }
       if (menuEl) { closeMenu(); return; }
       if (ui.emojiOpen) { ui.emojiOpen = false; $('.emoji-picker')?.setAttribute('hidden', ''); $('.emoji-trigger')?.setAttribute('aria-expanded', 'false'); return; }
@@ -2060,6 +2160,7 @@ const answer = 42;
       else if (t.matches('#lane-wip-limit')) { e.preventDefault(); run(() => A['save-lane-wip']()); }
       else if (t.matches('.list-title-input, .board-title, .m-title, .ci-text')) { e.preventDefault(); t.blur(); }
       else if (t.matches('.card')) { e.preventDefault(); run(() => dispatch('open-card', t, e)); }
+      else if (t.matches('.timeline-row, .timeline-undated-row')) { e.preventDefault(); run(() => dispatch('open-card', $('.timeline-card', t), e)); }
     }
   });
 
@@ -2069,7 +2170,7 @@ const answer = 42;
     ui.modal = null; ui.q = ''; ui.filters = { status: [], due: [], labels: [] }; ui.filterOpen = false; ui.emojiOpen = false; ui.emojiTarget = null; ui.composer = null; ui.addingList = false; closeMenu(); render();
   }));
   async function refreshExternal() {
-    if (!ready || failed || running || saveT || dirty || drag || descriptionDraft) return;
+    if (!ready || failed || running || saveT || dirty || drag || timelineDrag || descriptionDraft) return;
     const revision = (await store.db.settings.get('revision'))?.value || 0;
     if (revision !== store.revision) {
       await run(async () => {
@@ -2089,6 +2190,91 @@ const answer = 42;
   if (channel) channel.onmessage = () => refreshExternal().catch(storageError);
   addEventListener('focus', () => refreshExternal().catch(storageError));
   addEventListener('kanbaya-install-change', () => run(() => render()));
+
+  /* ---------------- Cronograma ---------------- */
+  function timelineDates(d, delta) {
+    if (d.mode === 'start') delta = Math.min(delta, dateOrdinal(d.due) - dateOrdinal(d.start));
+    if (d.mode === 'end') delta = Math.max(delta, dateOrdinal(d.start) - dateOrdinal(d.due));
+    return {
+      delta,
+      start: d.start && d.mode !== 'end' ? shiftDate(d.start, delta) : d.start,
+      due: d.due && d.mode !== 'start' ? shiftDate(d.due, delta) : d.due
+    };
+  }
+  function moveTimelinePointer(e) {
+    const d = timelineDrag;
+    if (!d || e.pointerId !== d.id) return;
+    const distance = e.clientX - d.x;
+    if (!d.active && Math.abs(distance) < 5) return;
+    d.active = true;
+    if (e.cancelable) e.preventDefault();
+    const dates = timelineDates(d, Math.round(distance / TIMELINE_DAY_WIDTH));
+    d.delta = dates.delta;
+    if ((dates.start && !validDate(dates.start)) || (dates.due && !validDate(dates.due))) return;
+    const first = dateOrdinal(d.first), start = dateOrdinal(dates.start || dates.due), end = dateOrdinal(dates.due || dates.start);
+    const left = Math.max(0, Math.min(d.days, start - first));
+    const right = Math.max(left, Math.min(d.days, end - first + 1));
+    d.bar.style.left = left * TIMELINE_DAY_WIDTH + 'px';
+    d.bar.style.width = (right - left) * TIMELINE_DAY_WIDTH + 'px';
+    d.bar.classList.add('is-dragging');
+  }
+  function finishTimelineDrag(commit) {
+    const d = timelineDrag;
+    if (!d) return;
+    timelineDrag = null;
+    removeEventListener('pointermove', moveTimelinePointer);
+    removeEventListener('pointerup', timelinePointerUp);
+    removeEventListener('pointercancel', timelinePointerCancel);
+    if (d.bar.hasPointerCapture(d.id)) d.bar.releasePointerCapture(d.id);
+    if (d.active) suppressClick = Date.now() + 300;
+    if (!d.active || !commit || !d.delta) {
+      if (d.active) render();
+      refreshExternal().catch(storageError);
+      return;
+    }
+    const dates = timelineDates(d, d.delta);
+    if ((dates.start && !validDate(dates.start)) || (dates.due && !validDate(dates.due))) {
+      render(); toast('The resulting date is outside the supported range.'); return;
+    }
+    run(async () => {
+      const b = cur();
+      if (!b || b.id !== d.boardId) return;
+      const revision = (await store.db.settings.get('revision'))?.value || 0;
+      if (revision !== store.revision) {
+        state = await store.readState();
+        render(); toast('The board changed in another tab. Please try again.'); return;
+      }
+      const c = await store.card(b.id, d.cardId);
+      if ((c.startDate || '') !== d.start || (c.due || '') !== d.due) {
+        render(); toast('The card dates changed. Refresh and try again.'); return;
+      }
+      const list = b.lists.find(l => l.id === c.listId);
+      if (!list) throw new Error('The card list no longer exists. Refresh the view.');
+      list.cards = list.cards.filter(row => row.id !== c.id);
+      list.cards.push(c);
+      list.cards.sort((a, b) => a._pos - b._pos);
+      store.adopt(state);
+      if (dates.start) c.startDate = dates.start; else delete c.startDate;
+      c.due = dates.due;
+      save(); render();
+    });
+  }
+  function timelinePointerUp(e) { if (timelineDrag && e.pointerId === timelineDrag.id) finishTimelineDrag(true); }
+  function timelinePointerCancel(e) { if (timelineDrag && e.pointerId === timelineDrag.id) finishTimelineDrag(false); }
+  document.addEventListener('pointerdown', e => {
+    const bar = e.target.closest('.timeline-bar'), host = bar?.closest('.timeline-window');
+    if (!bar || !host || timelineDrag || drag || queued || ui.modal || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    const mode = e.target.closest('[data-timeline-handle]')?.dataset.timelineHandle || 'move';
+    timelineDrag = {
+      id: e.pointerId, x: e.clientX, bar, mode, boardId: cur().id, cardId: bar.dataset.timelineId,
+      start: bar.dataset.start, due: bar.dataset.due, first: host.dataset.timelineFirst, days: Number(host.dataset.timelineDays),
+      active: false, delta: 0
+    };
+    bar.setPointerCapture(e.pointerId);
+    addEventListener('pointermove', moveTimelinePointer, { passive: false });
+    addEventListener('pointerup', timelinePointerUp);
+    addEventListener('pointercancel', timelinePointerCancel);
+  });
 
   /* ---------------- Arrastrar y soltar (ratón + táctil) ---------------- */
   function onPointerDown(e) {
@@ -2248,6 +2434,7 @@ const answer = 42;
     try {
       state = await store.initialize(seed);
       await store.applyWelcomePriorities('My first board', WELCOME_PRIORITIES);
+      await store.applyWelcomeDates('My first board', Object.keys(WELCOME_PRIORITIES), welcomeDates);
       ready = true;
       if (location.hash.startsWith('#/b/') && !cur()) location.replace('#/');
       render();
