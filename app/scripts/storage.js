@@ -210,6 +210,10 @@
         };
       });
     }
+    async archivedCount(boardId) {
+      return this.db.cards.where('[boardId+archivedKey+due]')
+        .between([boardId, 1, Dexie.minKey], [boardId, 1, Dexie.maxKey], true, true).count();
+    }
     async card(boardId, id) {
       return this.db.transaction('r', this.db.cards, this.db.cardDetails, async () => {
         const row = await this.db.cards.get([boardId, id]);

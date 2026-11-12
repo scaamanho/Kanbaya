@@ -122,6 +122,53 @@ test('archive all and undo include cards outside the window', async ({ page }) =
   await expect(page.locator('.card').first()).toBeVisible();
   expect(await db(page, store => store.db.cards.where('boardId').equals('board0').filter(c => c.archived).count())).toBe(0);
 });
+test('board menu counts labels and all archived cards, updating after edits and reload', async ({ page }) => {
+  const data = fixture(160);
+  const first = data.boards[0];
+  for (const card of first.lists[0].cards.slice(0, 65)) card.archived = true;
+  const moved = first.lists[0].cards.shift();
+  moved.due = '';
+  first.lists[1].cards.push(moved);
+  data.boards[1].labels = [];
+  for (const card of data.boards[1].lists[0].cards) card.labels = [];
+  data.boards[1].lists[0].cards[0].archived = true;
+  await seed(page, data);
+  const labels = page.locator('[data-act="open-labels"]');
+  const archived = page.locator('[data-act="open-archive"]');
+  await page.locator('[data-act="board-menu"]').click();
+  await expect(labels).toContainText('Labels (1)');
+  await expect(archived).toContainText('Archived cards (65)');
+  await labels.click();
+  await page.locator('[data-act="add-label"]').click();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(labels).toContainText('Labels (2)');
+  await archived.click();
+  await page.locator('.arch-row').first().getByRole('button', { name: 'Restore' }).click();
+  await page.locator('.arch-row').first().getByRole('button', { name: 'Delete' }).click();
+  await page.locator('.app-dialog').getByRole('button', { name: 'Delete', exact: true }).click();
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(archived).toContainText('Archived cards (63)');
+  await page.reload();
+  await page.locator('[data-act="board-menu"]').click();
+  await expect(labels).toContainText('Labels (2)');
+  await expect(archived).toContainText('Archived cards (63)');
+  await page.goto('/app/#/b/board1');
+  await page.locator('[data-act="board-menu"]').click();
+  await expect(labels).toContainText('Labels (0)');
+  await expect(archived).toContainText('Archived cards (1)');
+});
+test('board menu refreshes archived counts after another tab changes the board', async ({ page, context }) => {
+  await seed(page, fixture(4));
+  await page.locator('[data-act="board-menu"]').click();
+  const archived = page.locator('[data-act="open-archive"]');
+  await expect(archived).toContainText('Archived cards (0)');
+  const other = await context.newPage();
+  await other.goto('/app/#/b/board0');
+  await other.locator('.card').filter({ hasText: 'Tarea 0' }).click();
+  await other.locator('[data-act="archive-card"]').click();
+  await expect(archived).toContainText('Archived cards (1)');
+  await other.close();
+});
 test('deleting a list cascades details and undo restores all records', async ({ page }) => {
   await seed(page, fixture(200));
   await page.locator('.list').first().locator('[data-act="list-menu"]').click();
@@ -521,9 +568,9 @@ test('a cached previous release detects the deployed update on startup and prese
   await expect(page.locator('.card').filter({ hasText: 'Saved before updating' })).toBeVisible();
   expect(await db(page, store => store.db.cards.count())).toBe(4);
   const cachesAfterUpdate = await page.evaluate(() => caches.keys());
-  expect(cachesAfterUpdate).toContain('kanbaya-pwa-v33');
+  expect(cachesAfterUpdate).toContain('kanbaya-pwa-v34');
   expect(cachesAfterUpdate).not.toContain('kanbaya-pwa-v27');
-  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '33'))).toBe(true);
+  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '34'))).toBe(true);
 
   await context.setOffline(true);
   await page.reload();

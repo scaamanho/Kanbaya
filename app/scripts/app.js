@@ -935,15 +935,15 @@ const answer = 42;
       <div class="actions"><button class="btn primary" data-act="close-modal">Close</button></div>`);
   }
 
-  function boardMenuModal(b) {
+  function boardMenuModal(b, m) {
     return wrapModal(`<button class="icon-btn close" data-act="close-modal" aria-label="Close">✕</button>
       <h3>Board menu</h3>
       <h4>Background</h4>${swatches(b.bg)}
       <div class="board-custom-bg"><label class="custom-color">Custom color<input type="color" data-f="board-bg" value="${b.bgColor || '#16875d'}"></label><button class="btn sm" data-act="clear-board-bg">Use default background</button></div>
       <h4>Board</h4>
       <button class="btn block" data-act="open-statistics">▥ Statistics</button>
-      <button class="btn block" data-act="open-labels">🏷 Labels</button>
-      <button class="btn block" data-act="open-archive">🗄 Archived cards</button>
+      <button class="btn block" data-act="open-labels">🏷 Labels (${b.labels.length})</button>
+      <button class="btn block" data-act="open-archive">🗄 Archived cards (${m.archivedCount})</button>
       <button class="btn block" data-act="open-templates">☆ Personal templates (${state.templates.length})</button>
       <button class="btn block" data-act="dup-board">⎘ Duplicate board</button>
       <button class="btn block" data-act="export-board">⬇ Export this board</button>
@@ -1021,6 +1021,7 @@ const answer = 42;
     const c = ctxCard();
     if (c && !c.card.title.trim()) { c.card.title = 'Untitled'; save(); }
     ui.modal = ui.modal?.prev || null;
+    if (ui.modal?.type === 'boardmenu') ui.modal.archivedCount = await store.archivedCount(cur().id);
     render();
   }
 
@@ -1450,7 +1451,10 @@ const answer = 42;
       if (!b) return;
       b.favorite = !b.favorite; save(); render();
     },
-    'board-menu'() { ui.modal = { type: 'boardmenu' }; render(); },
+    async 'board-menu'() {
+      const archivedCount = await store.archivedCount(cur().id);
+      ui.modal = { type: 'boardmenu', archivedCount }; render();
+    },
     async 'open-statistics'() {
       const b = cur(); if (!b) return;
       const stats = await store.statistics(b);
@@ -2027,6 +2031,7 @@ const answer = 42;
             cur().lists.find(l => l.id === c.listId)?.cards.push(c); store.adopt(state);
           } else ui.modal = null;
         }
+        if (ui.modal?.type === 'boardmenu' && cur()) ui.modal.archivedCount = await store.archivedCount(cur().id);
         render();
       });
     }
