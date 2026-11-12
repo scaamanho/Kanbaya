@@ -122,7 +122,7 @@ When opening `app/` on the same origin after using version 23 at the repository 
 
 When changing production resources, update the version in `app/scripts/boot.js`, `app/sw.js`, their precache entries, and the versioned references in `app/index.html` together. Do not change a published schema under the same version number: add a new Dexie version and its migration.
 
-Product **1.1.0**, including Google Drive backups, uses coordinated asset/cache version **29**, so earlier installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database migration or reinstall is needed for this release.
+Product **1.1.0**, including Google Drive backups, uses coordinated asset/cache version **30**, so earlier installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database migration or reinstall is needed for this release.
 
 ## Backups and recovery
 
@@ -141,6 +141,8 @@ Import accepts version 2 JSON and version 4 `.kanbaya`/`KANBAYA4` backups. It re
 ### Google Drive backups
 
 Use **Data > Save backup to Google Drive…** or **Import backup from Google Drive…**, then **Connect / change Google account**. Saving copies all boards, templates and attachments into the visible **Kanbaya Backups** folder, without overwriting earlier backups. Import lists backups created through this integration and adds independent copies of their boards using the same validation and formats as local import. Manually uploaded files are not listed; download those and use local import instead.
+
+For an individual board, open **Board menu > Save this board to Google Drive…**. This includes only that board and its attachments, not other boards or personal templates, matching local board export. The filename includes the board name and a timestamp. Every save creates a new backup, never overwriting an earlier file. Individual-board and full backups share the same Drive import action.
 
 [drive.js](app/scripts/drive.js) defines the public OAuth `CLIENT_ID`, requests only `drive.file`, and keeps access tokens in memory, never in IndexedDB, localStorage, sessionStorage or backups. Reloading requires reconnecting; closing the dialog does not sign out of Google or revoke previously granted permission. Expired/revoked authorization asks you to connect again. The integration uses resumable upload sessions, but does not automatically retry or resume interrupted transfers.
 
@@ -187,8 +189,8 @@ The heap does not include IndexedDB storage or all browser memory. Initial datab
 
 
 ### Test Local
-python -m http.server 8000
-netstat -ano | findstr :8000
+python -m http.server 8766
+netstat -ano | findstr :8766
 tasklist /FI "PID eq 1234"
 taskkill /PID 1234 /F
 

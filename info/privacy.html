@@ -41,7 +41,7 @@
       <p>Google Drive is optional. Opening a Drive backup dialog loads Google Identity Services from Google. Connecting then opens Google's authorization flow. Kanbaya does not request or receive your Google password.</p>
       <p>Kanbaya requests only <code>https://www.googleapis.com/auth/drive.file</code>, a permission limited to files created by the app or explicitly made available to it. This integration lists only backups it creates; it does not browse your whole Drive or request your email, contacts or Google profile.</p>
       <ul>
-        <li><strong>Save:</strong> when you choose to save, Kanbaya sends a backup of all boards, templates and attachments directly from your browser to your Google Drive, in a folder named <strong>Kanbaya Backups</strong>.</li>
+        <li><strong>Save:</strong> when you choose to save, Kanbaya sends the backup directly from your browser to your Google Drive, in a folder named <strong>Kanbaya Backups</strong>. The data menu saves all boards, templates and attachments. The individual-board option saves only that board and its attachments, without other boards or personal templates. Each save creates a new file.</li>
         <li><strong>List:</strong> Kanbaya reads file identifiers, names and modification times for its backup files so you can select a backup.</li>
         <li><strong>Import:</strong> when you select a backup and import it, Kanbaya downloads its contents directly to your browser and adds local copies. Existing boards are not replaced.</li>
       </ul>

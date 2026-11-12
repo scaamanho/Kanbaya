@@ -464,6 +464,18 @@ Si el servidor ya está en marcha, no necesitas iniciarlo otra vez.
 
 Se incluyen todos los tableros, las plantillas y los adjuntos. Cada guardado crea un archivo nuevo con fecha y hora; no sustituye al anterior.
 
+### Guardar únicamente un tablero
+
+1. Abre el tablero que quieres guardar.
+2. Pulsa **☰ Menu** para abrir el menú del tablero.
+3. Pulsa **Save this board to Google Drive…**.
+4. Comprueba el nombre del tablero en el diálogo y conecta tu cuenta si hace falta.
+5. Pulsa **Save backup** y espera la confirmación.
+
+Solo se incluye ese tablero con todas sus tarjetas y adjuntos, también los que no estén visibles. No se incluyen los demás tableros ni las plantillas personales. El archivo lleva el nombre del tablero y la fecha y hora. Cada guardado crea un backup nuevo: nunca sobrescribe el anterior.
+
+Para recuperarlo, utiliza la misma opción **Import backup from Google Drive…** del menú general. Se añadirá una copia del tablero, sin sustituir el original.
+
 ### Importar un backup guardado
 
 1. Abre **⋯ → Import backup from Google Drive…**.

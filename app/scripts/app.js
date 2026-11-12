@@ -947,6 +947,7 @@ const answer = 42;
       <button class="btn block" data-act="open-templates">☆ Personal templates (${state.templates.length})</button>
       <button class="btn block" data-act="dup-board">⎘ Duplicate board</button>
       <button class="btn block" data-act="export-board">⬇ Export this board</button>
+      <button class="btn block" data-act="drive-export-board">Save this board to Google Drive…</button>
       <button class="btn block danger" data-act="del-board">🗑 Delete board</button>
       <section class="keyboard-shortcuts" aria-labelledby="shortcuts-heading">
         <h4 id="shortcuts-heading">Keyboard shortcuts</h4>
@@ -1151,16 +1152,17 @@ const answer = 42;
     return () => mutate(() => { staged.forEach(image => store.stageImage(image)); state.boards.push(...list); if (Array.isArray(data.templates)) state.templates.push(...data.templates.map(t => ({ id: uid(), title: String(t.title || 'Template').slice(0, 100), desc: String(t.desc || ''), checklist: Array.isArray(t.checklist) ? t.checklist.map(x => String(x).slice(0, 200)) : [] }))); }, `${list.length} board(s) imported`);
   }
 
-  function driveBackupDialog(mode) {
+  function driveBackupDialog(mode, board = null) {
     const drive = window.KanbayaDrive;
-    const previousFocus = $('[data-act="data-menu"]');
+    const focusSelector = board ? '[data-act="board-menu"]' : '[data-act="data-menu"]';
+    const previousFocus = $(focusSelector);
     const dialog = document.createElement('dialog');
     dialog.className = 'modal narrow app-dialog drive-dialog';
     dialog.setAttribute('aria-labelledby', 'drive-title');
-    dialog.innerHTML = `<h3 id="drive-title">${mode === 'save' ? 'Save backup to Google Drive' : 'Import backup from Google Drive'}</h3>
+    dialog.innerHTML = `<h3 id="drive-title">${mode === 'save' ? (board ? 'Save this board to Google Drive' : 'Save backup to Google Drive') : 'Import backup from Google Drive'}</h3>
       <p class="muted">Manual backups only. Google receives a copy when you save; your local boards are not synchronized.</p>
       <button type="button" class="btn" data-drive="connect">Load Google sign-in</button>
-      ${mode === 'save' ? '<p>Save all boards, templates and attachments in the Kanbaya Backups folder.</p><button type="button" class="btn primary" data-drive="save" disabled>Save backup</button>'
+      ${mode === 'save' ? `<p>${board ? `Save only the board <strong>${esc(board.name)}</strong> and its attachments. Other boards and personal templates are not included.` : 'Save all boards, templates and attachments.'} Each save creates a new dated backup in the Kanbaya Backups folder.</p><button type="button" class="btn primary" data-drive="save" disabled>Save backup</button>`
         : '<p>Only backups created by Kanbaya through this integration are listed. Import adds copies of their boards; it does not replace existing boards.</p><label for="drive-backup">Backup</label><select id="drive-backup" disabled><option value="">Connect to list backups</option></select><div class="drive-actions"><button type="button" class="btn" data-drive="refresh" disabled>Refresh</button><button type="button" class="btn primary" data-drive="import" disabled>Import backup</button></div>'}
       <p class="drive-status" role="status" aria-live="polite"></p>
       <div class="actions"><button type="button" class="btn" data-drive="close">Close</button></div>`;
@@ -1208,11 +1210,12 @@ const answer = 42;
     }, 'Connecting to Google Drive...');
     $('[data-drive="save"]', dialog)?.addEventListener('click', () => perform(async () => {
       if (hasDescriptionChanges()) throw new Error('Save or cancel the description before creating a backup.');
+      if (board && !boardById(board.id)) throw new Error('This board is no longer available. Close this dialog and select another board.');
       let backup;
-      await run(async () => { backup = await store.exportBackup(state.boards.map(board => board.id), true); });
+      await run(async () => { backup = await store.exportBackup(board ? [board.id] : state.boards.map(board => board.id), !board); });
       if (!backup) throw new Error('Could not read the backup. Check the application error notification.');
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const name = `kanbaya-${stamp}.${backup.extension}`;
+      const name = `kanbaya-${board ? board.name.replace(/[^\w-]+/g, '_') + '-' : ''}${stamp}.${backup.extension}`;
       await drive.upload(backup, name);
       message(`Backup saved in Google Drive: ${name}`);
     }, 'Saving backup to Google Drive...'));
@@ -1232,7 +1235,7 @@ const answer = 42;
     dialog.addEventListener('keydown', event => event.stopPropagation());
     dialog.addEventListener('close', () => {
       dialog.remove();
-      const focus = previousFocus?.isConnected ? previousFocus : $('[data-act="data-menu"]');
+      const focus = previousFocus?.isConnected ? previousFocus : $(focusSelector);
       if (focus && !focus.closest('[inert]')) focus.focus({ preventScroll: true });
     }, { once: true });
     document.body.append(dialog);
@@ -1302,6 +1305,11 @@ const answer = 42;
       state.boards.push(c); save(); ui.modal = null; location.hash = '#/b/' + c.id; render();
     },
     'export-board'() { const b = cur(); return exportBoards([b], b.name.replace(/[^\w-]+/g, '_')); },
+    'drive-export-board'() {
+      const b = cur();
+      if (!b) { toast('This board is no longer available.'); return; }
+      ui.modal = null; render(); driveBackupDialog('save', b);
+    },
     async 'del-board'() {
       const b = cur();
       if (!await confirmAction(`Delete the board "${b.name}" and all its contents?`)) return;
