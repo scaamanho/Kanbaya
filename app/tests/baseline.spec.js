@@ -1,5 +1,45 @@
 const { test, expect } = require('@playwright/test');
 const { fixture, seed } = require('./fixtures');
+test('product version is non-interactive bottom-left text on boards and home at every screen size', async ({ page }) => {
+  await seed(page, fixture(4));
+  const version = page.locator('.app-footer .product-version');
+  for (const view of ['board', 'home']) {
+    if (view === 'home') await page.getByRole('link', { name: 'Home', exact: true }).click();
+    for (const width of [1280, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(version).toHaveText('Kanbaya v1.1.0');
+      await expect(version).toBeInViewport();
+      const bounds = await version.evaluate(el => {
+        const footer = el.closest('footer');
+        const rect = footer.getBoundingClientRect();
+        const text = el.getBoundingClientRect();
+        const content = footer.previousElementSibling.getBoundingClientRect();
+        const support = footer.querySelector('.support-link')?.getBoundingClientRect();
+        return { left: rect.left, bottom: rect.bottom, height: innerHeight,
+          contentBottom: content.bottom, top: rect.top, textRight: text.right,
+          supportTop: support?.top, supportBottom: support?.bottom, supportLeft: support?.left,
+          supportRight: support?.right, viewport: innerWidth,
+          interactive: !!el.closest('a, button, [data-act], [tabindex]') };
+      });
+      expect(bounds.left).toBe(0);
+      expect(Math.abs(bounds.bottom - bounds.height)).toBeLessThanOrEqual(1);
+      expect(bounds.contentBottom).toBeLessThanOrEqual(bounds.top + 1);
+      if (view === 'home') {
+        expect(bounds.supportTop).toBeGreaterThanOrEqual(bounds.top);
+        expect(bounds.supportBottom).toBeLessThanOrEqual(bounds.bottom);
+        expect(bounds.textRight).toBeLessThan(bounds.supportLeft);
+        expect(bounds.supportRight).toBeLessThanOrEqual(bounds.viewport);
+      }
+      expect(bounds.interactive).toBe(false);
+      const url = page.url();
+      await version.click();
+      await expect(page).toHaveURL(url);
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+    }
+  }
+  await expect(page.getByRole('heading', { name: 'Your boards' })).toBeVisible();
+});
+
 test('preserves legacy card details, search and calendar contracts', async ({ page }) => {
   await seed(page, fixture(20));
   await expect(page.locator('.board-title')).toHaveValue('Tablero 0');
@@ -298,9 +338,7 @@ test('shows the Buy Me a Coffee link only on the home page', async ({ page }) =>
   await expect(supportLink).toHaveAttribute('target', '_blank');
   await expect(supportLink).toHaveAttribute('rel', 'noopener noreferrer');
   await expect(supportLink.locator('img')).toHaveAttribute('src', 'https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png');
-  await expect(supportLink).toHaveCSS('position', 'fixed');
-  await expect(supportLink).toHaveCSS('right', '16px');
-  await expect(supportLink).toHaveCSS('bottom', '16px');
+  await expect(page.locator('.app-footer').getByRole('link', { name: 'Buy Me a Coffee' })).toBeVisible();
   await page.locator('.board-tile').filter({ hasText: 'My first board' }).click();
   await expect(page.getByRole('link', { name: 'Buy Me a Coffee' })).toHaveCount(0);
 });

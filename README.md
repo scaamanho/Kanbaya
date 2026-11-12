@@ -18,6 +18,8 @@ Third-party components retain their own licenses; the project license does not r
 
 The product website lives at the repository root, with screenshots in `assets/`. The application and its development files live in `app/`.
 
+The application displays **Kanbaya v1.1.0** as non-interactive, secondary-colored text in the bottom-left footer on the home screen and boards. It does not open a dialog or navigate. On the home screen, the same footer contains the **Buy Me a Coffee** button on the right, without overlaying content. The product version is defined by `PRODUCT_VERSION` in `app/scripts/app.js` and is independent of worker/cache, database and backup versions.
+
 Serve the repository directory over HTTPS, or localhost for development. For example, with Node installed:
 
 ```powershell

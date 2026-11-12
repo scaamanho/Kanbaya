@@ -79,6 +79,8 @@ button { cursor: pointer; }
 }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--text); text-decoration: none; margin-right: 4px; }
 .brand svg { width: 26px; height: 26px; }
+.app-footer { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; padding: 4px max(12px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); background: var(--bar); }
+.product-version { color: var(--muted); font-size: 11px; }
 .storage-meter { display: flex; flex: none; flex-direction: column; gap: 3px; width: 132px; color: var(--muted); font-size: 11px; line-height: 1.2; }
 .storage-meter-head { display: flex; justify-content: space-between; gap: 6px; }
 .storage-value { color: var(--text); font-variant-numeric: tabular-nums; }
@@ -86,13 +88,17 @@ button { cursor: pointer; }
 .storage-track span { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width .2s ease; }
 @media (max-width: 520px) {
   .brand span { display: none; }
-  .topbar { gap: 4px; }
+  .topbar { gap: 4px; flex-wrap: wrap; }
   .storage-meter { width: 64px; }
   .storage-meter-head > span:first-child { display: none; }
 }
+@media (max-width: 380px) {
+  .topbar > .btn { padding-left: 6px; padding-right: 6px; }
+  .storage-meter { width: 32px; }
+}
 
 /* ---------- Inicio ---------- */
-.home { flex: 1; overflow: auto; padding: 24px 16px 96px; width: 100%; max-width: 1040px; margin: 0 auto; }
+.home { flex: 1; overflow: auto; padding: 24px 16px; width: 100%; max-width: 1040px; margin: 0 auto; }
 .home-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
 .home h1 { font-size: 20px; margin: 0; }
 .home-board-search { width: min(220px, 42vw); min-width: 0; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); }
@@ -116,13 +122,12 @@ button { cursor: pointer; }
 .board-bar .board-favorite-toggle { font-size: 20px; }
 .board-tile.new { background: var(--list-bg); color: var(--text); justify-content: center; align-items: center; font-weight: 500; }
 .empty { color: var(--muted); }
-.support-link { position: fixed; right: 16px; bottom: 16px; z-index: 40; display: block; width: min(217px, calc(100vw - 32px)); height: 60px; }
-.support-link img { display: block; width: 100%; height: 60px; object-fit: contain; }
+.support-link { display: block; flex: none; }
+.support-link img { display: block; width: 100px; height: 30px; object-fit: contain; }
 .support-link:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
 @media (max-width: 520px) {
   .home-heading { align-items: stretch; flex-direction: column; gap: 12px; }
   .home-board-search { width: 100%; }
-  .support-link { right: 12px; bottom: 12px; }
 }
 
 /* ---------- Tablero ---------- */

@@ -1,6 +1,7 @@
 'use strict';
 /* Kanbaya PWA. Persistencia transaccional local con Dexie. */
 (() => {
+  const PRODUCT_VERSION = '1.1.0';
   const PALETTE = ['#4bce97', '#f5cd47', '#fea362', '#f87168', '#9f8fef', '#579dff', '#6cc3e0', '#94c748', '#e774bb', '#8c9bab'];
   const PRIORITIES = [{ value: '', label: 'No priority' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'critical', label: 'Critical' }];
   const WELCOME_PRIORITIES = {
@@ -520,7 +521,6 @@
       ${favorites.length ? `<section class="home-section" data-section="favorites"><h2>★ Favorites</h2><div class="board-grid">${tiles(favorites)}</div></section>` : ''}
       <section class="home-section" data-section="all-boards"><h2>All boards</h2><div class="board-grid">${tiles(boards)}<button class="board-tile new" data-act="new-board">＋ Create board</button></div>
       ${!boards.length ? `<p class="empty">${emptyMessage}</p>` : ''}</section>
-      <a class="support-link" href="https://www.buymeacoffee.com/scaamanho" target="_blank" rel="noopener noreferrer" aria-label="Buy Me a Coffee"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="100" height="30" style="width:100px;height:30px" ></a>
       </main>`;
   }
 
@@ -664,7 +664,10 @@
     const search = document.activeElement?.matches('.home-board-search') ? document.activeElement : null;
     const searchSelection = search ? { start: search.selectionStart, end: search.selectionEnd, direction: search.selectionDirection } : null;
     document.title = b ? `${b.name} · Kanbaya` : 'Kanbaya';
-    $('#app').innerHTML = topbarHTML() + (b ? boardHTML(b) : homeHTML());
+    $('#app').innerHTML = topbarHTML() + (b ? boardHTML(b) : homeHTML()) + `<footer class="app-footer">
+      <span class="product-version">Kanbaya v${PRODUCT_VERSION}</span>
+      ${b ? '' : '<a class="support-link" href="https://www.buymeacoffee.com/scaamanho" target="_blank" rel="noopener noreferrer" aria-label="Buy Me a Coffee"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="100" height="30"></a>'}
+    </footer>`;
     sizeBoardTitle();
     restoreScroll(s, b?.id);
     lastBoardId = b?.id ?? null;
