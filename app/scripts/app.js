@@ -930,15 +930,48 @@ const answer = 42;
         return `<div class="stats-row" data-stat-row="${type}"><span>${color ? `<i class="stats-label-color" style="background:${color}" aria-hidden="true"></i>` : ''}${esc(item.label)}</span><div class="stats-track" aria-hidden="true"><i class="${item.priority ? `priority-${item.priority}` : ''}" style="width:${item.count / max * 100}%;${color ? `background:${color}` : ''}"></i></div><strong>${item.count}</strong></div>`;
       }).join('');
     };
+    const palette = ['#579dff', '#4bce97', '#fea362', '#ae8bea', '#f87168', '#6cc3e0', '#f5cd47', '#94c748', '#e774bb', '#8c9bab'];
+    const priorityColors = { low: '#4bce97', medium: '#f5cd47', high: '#fea362', critical: '#f87168', '': '#8c9bab' };
+    const dueColors = ['#4bce97', '#f87168', '#f5cd47', '#579dff', '#ae8bea', '#8c9bab'];
+    const chart = (items, type) => {
+      const total = items.reduce((sum, item) => sum + item.count, 0);
+      let offset = 0;
+      const segments = [], legend = items.map((item, index) => {
+        const color = /^#[\da-f]{6}$/i.test(item.color) ? item.color :
+          type === 'priority' ? priorityColors[item.priority] : type === 'due' ? dueColors[index] :
+            type === 'label' ? '#8c9bab' : palette[index % palette.length];
+        if (item.count && total) {
+          const end = offset + item.count / total * 100;
+          segments.push(`${color} ${offset}% ${end}%`);
+          offset = end;
+        }
+        return `<div class="stats-legend-row" data-stat-row="${type}"><span><i class="stats-label-color" style="background:${color}" aria-hidden="true"></i>${esc(item.label)}</span><strong>${item.count}</strong></div>`;
+      });
+      return `${total ? `<div class="stats-pie" style="background:conic-gradient(${segments.join(',')})" aria-hidden="true"></div>` : '<p class="muted">No data to chart.</p>'}
+        <div class="stats-legend">${legend.join('')}</div>`;
+    };
+    const section = (title, items, type, description = '') => {
+      const view = m.charts[type];
+      return `<section class="stats-section">
+        <div class="stats-section-heading"><h4>${title}</h4>
+          <select data-stat-view="${type}" aria-label="${title} chart type">
+            <option value="bars" ${view === 'bars' ? 'selected' : ''}>Bars</option>
+            <option value="pie" ${view === 'pie' ? 'selected' : ''}>Pie chart</option>
+          </select>
+        </div>
+        ${description ? `<p>${description}</p>` : ''}
+        ${view === 'pie' ? chart(items, type) : items.length ? rows(items, type) : '<p class="muted">No lists yet.</p>'}
+      </section>`;
+    };
     return wrapModal(`<button class="icon-btn close" data-act="close-modal" aria-label="Close">✕</button>
       <h3>Statistics · ${esc(b.name)}</h3>
       <p class="stats-intro">A snapshot of active cards on this board. Archived cards are not included.</p>
       <div class="stats-summary">${metrics.map(([label, key, value]) => `<div class="stats-metric"><strong data-stat="${key}">${value}</strong><span>${label}</span></div>`).join('')}</div>
       <div class="stats-grid">
-        <section class="stats-section"><h4>Cards by list</h4>${stats.lists.length ? rows(stats.lists, 'list') : '<p class="muted">No lists yet.</p>'}</section>
-        <section class="stats-section"><h4>By due date</h4><p>Completed cards are counted separately.</p>${rows(stats.due, 'due')}</section>
-        <section class="stats-section"><h4>By label</h4><p>Cards with multiple labels are counted for each label.</p>${rows(stats.labels, 'label')}</section>
-        <section class="stats-section"><h4>By priority</h4>${rows(stats.priorities, 'priority')}</section>
+        ${section('Cards by list', stats.lists, 'list')}
+        ${section('By due date', stats.due, 'due', 'Completed cards are counted separately.')}
+        ${section('By label', stats.labels, 'label', 'Cards with multiple labels are counted for each label. The pie chart shows label assignments and unlabelled cards, not the share of cards.')}
+        ${section('By priority', stats.priorities, 'priority')}
       </div>
       <div class="actions"><button class="btn primary" data-act="close-modal">Close</button></div>`, 'statistics-modal');
   }
@@ -1467,7 +1500,7 @@ const answer = 42;
       const b = cur(); if (!b) return;
       const stats = await store.statistics(b);
       if (cur()?.id !== b.id) return;
-      ui.modal = { type: 'statistics', stats }; render();
+      ui.modal = { type: 'statistics', stats, charts: { list: 'bars', due: 'bars', label: 'bars', priority: 'bars' } }; render();
     },
     'open-labels'() { ui.modal = { type: 'labels', prev: ui.modal }; render(); },
     'open-archive'() { ui.modal = { type: 'archive', prev: ui.modal }; render(); },
@@ -1939,6 +1972,15 @@ const answer = 42;
       return;
     }
     run(() => {
+    if (t.matches('[data-stat-view]') && ui.modal?.type === 'statistics') {
+      const type = t.dataset.statView;
+      if (Object.hasOwn(ui.modal.charts, type) && ['bars', 'pie'].includes(t.value)) {
+        ui.modal.charts[type] = t.value;
+        ui.focus = `[data-stat-view="${type}"]`;
+        render();
+      }
+      return;
+    }
     if (t.matches('[data-filter-group]')) {
       const { filterGroup: group } = t.dataset, value = t.value;
       if (ui.filters[group].includes(value)) ui.filters[group] = ui.filters[group].filter(x => x !== value);

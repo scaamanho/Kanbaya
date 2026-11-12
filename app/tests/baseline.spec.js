@@ -280,6 +280,43 @@ test('statistics break down labels, priorities and due dates without counting ar
     expect(await modal.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
     expect(await page.locator('.stats-grid').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBe(columns);
   }
+  for (const title of ['Cards by list', 'By due date', 'By label', 'By priority']) {
+    const select = page.getByLabel(`${title} chart type`, { exact: true });
+    await select.selectOption('pie');
+    await expect(select).toBeFocused();
+    await expect(select.locator('option:checked')).toHaveText('Pie chart');
+  }
+  await expect(page.locator('.stats-pie')).toHaveCount(4);
+  const labelSection = page.locator('.stats-section').filter({ has: page.getByRole('heading', { name: 'By label', exact: true }) });
+  await expect(labelSection).toContainText('label assignments and unlabelled cards, not the share of cards');
+  const gradient = await labelSection.locator('.stats-pie').evaluate(el => el.style.background);
+  expect(gradient).toContain('37.5%');
+  expect(gradient).toContain('75%');
+  expect(gradient).toContain('100%');
+  await expect(labelSection.locator('[data-stat-row="label"]').filter({ hasText: 'No label' }).locator('strong')).toHaveText('2');
+  const priorityRows = page.locator('[data-stat-row="priority"]');
+  const criticalColor = await priorityRows.filter({ hasText: 'Critical' }).locator('.stats-label-color').evaluate(el => el.style.background);
+  const noPriorityColor = await priorityRows.filter({ hasText: 'No priority' }).locator('.stats-label-color').evaluate(el => el.style.background);
+  expect(noPriorityColor).not.toBe(criticalColor);
+  await page.getByLabel('By priority chart type').selectOption('bars');
+  await expect(page.locator('.stats-pie')).toHaveCount(3);
+  await expect(page.getByLabel('By label chart type')).toHaveValue('pie');
+  await expect(page.locator('[data-stat-row="priority"]').filter({ hasText: 'High' }).locator('strong')).toHaveText('1');
+  expect(await modal.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+});
+test('pie charts handle empty statistics without inventing slices', async ({ page }) => {
+  const data = fixture(0);
+  data.boards[0].lists = [];
+  data.boards[0].labels = [];
+  await seed(page, data);
+  await page.locator('[data-act="board-menu"]').click();
+  await page.locator('[data-act="open-statistics"]').click();
+  for (const title of ['Cards by list', 'By due date', 'By label', 'By priority']) {
+    await page.getByLabel(`${title} chart type`).selectOption('pie');
+  }
+  await expect(page.locator('.stats-pie')).toHaveCount(0);
+  await expect(page.getByText('No data to chart.', { exact: true })).toHaveCount(4);
+  await expect(page.locator('[data-stat-row="label"]').filter({ hasText: 'No label' }).locator('strong')).toHaveText('0');
 });
 test('favorites persist and appear first in the Boards menu', async ({ page }) => {
   await page.goto('/app/');

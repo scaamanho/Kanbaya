@@ -84,7 +84,7 @@ Lane options are optional metadata in the existing `lists` store (`collapsed`, `
 
 Startup queries metadata and counters. Boards retain result keys/positions and summary windows; full details are read when a card is opened. Windows for inactive boards are released from memory. Global operations that need all content, such as duplicating, sorting, archiving all cards, or exporting, load it temporarily: they do not operate only on visible cards.
 
-**Board menu > Statistics** summarizes all non-archived cards on the current board, including offscreen cards, regardless of filters. It shows breakdowns by list, due date, label and priority. A card with several labels is counted under each; unlabelled cards have their own row. Completed cards are grouped separately in the due-date breakdown; the next-seven-days group excludes today and includes the seventh day. Priority includes cards without a priority.
+**Board menu > Statistics** summarizes all non-archived cards on the current board, including offscreen cards, regardless of filters. It shows breakdowns by list, due date, label and priority; each section can independently switch between bars and a pie chart while the statistics are open. A card with several labels is counted under each; unlabelled cards have their own row. The label pie represents label assignments and unlabelled cards, not the share of cards. Completed cards are grouped separately in the due-date breakdown; the next-seven-days group excludes today and includes the seventh day. Priority includes cards without a priority.
 
 The calendar queries the 42-day range once and groups the results. Days with many events scroll internally. Search preserves substring matching in titles, descriptions, labels, checklists, and comments; it uses derived text and current label names. **This is not a full-text index**: it must scan candidates, so its cost still grows with the number of cards. Results from previous views or searches are discarded.
 
@@ -124,7 +124,7 @@ When opening `app/` on the same origin after using version 23 at the repository 
 
 When changing production resources, update the version in `app/scripts/boot.js`, `app/sw.js`, their precache entries, and the versioned references in `app/index.html` together. Do not change a published schema under the same version number: add a new Dexie version and its migration.
 
-Product **1.1.0**, including Google Drive backups, uses coordinated asset/cache version **35**, so earlier installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database migration or reinstall is needed for this release.
+Product **1.1.0**, including Google Drive backups, uses coordinated asset/cache version **36**, so earlier installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database migration or reinstall is needed for this release.
 
 ## Backups and recovery
 

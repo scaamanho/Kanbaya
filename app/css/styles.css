@@ -389,7 +389,13 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none 
 .stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
 .stats-section { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 10px; }
 .stats-section h4 { margin: 0 0 10px; color: var(--text); }
+.stats-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.stats-section-heading h4 { margin: 0; }
+.modal .stats-section-heading select { width: auto; max-width: 100%; padding: 5px 8px; }
 .stats-section p { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.stats-pie { width: min(180px, 75%); aspect-ratio: 1; margin: 16px auto; border-radius: 50%; }
+.stats-legend-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 3px 0; font-size: 13px; }
+.stats-legend-row > span { min-width: 0; overflow-wrap: anywhere; }
 .stats-row { display: grid; grid-template-columns: minmax(0, 140px) minmax(0, 1fr) 36px; align-items: center; gap: 8px; min-height: 28px; font-size: 13px; }
 .stats-row > span { min-width: 0; overflow-wrap: anywhere; }
 .stats-label-color { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; }
