@@ -211,9 +211,12 @@ test('export without attachments uses .kanbaya, includes unloaded details and im
   await page.locator('[data-act="data-menu"]').click();
   const pending = page.waitForEvent('download');
   await page.getByRole('menuitem', { name: 'Export all boards (backup)' }).click();
+  const filenameDialog = page.getByRole('dialog', { name: 'Backup filename' });
+  await filenameDialog.getByLabel('Backup filename').fill('Mi copia');
+  await filenameDialog.getByRole('button', { name: 'Export', exact: true }).click();
   const download = await pending;
   const fs = require('node:fs/promises');
-  expect(download.suggestedFilename()).toMatch(/\.kanbaya$/);
+  expect(download.suggestedFilename()).toBe('Mi copia.kanbaya');
   const buffer = await fs.readFile(await download.path());
   expect(buffer.subarray(0, 8).toString()).toBe('KANBAYA4');
   const json = JSON.parse(buffer.subarray(12, 12 + buffer.readUInt32LE(8)).toString());
@@ -239,8 +242,12 @@ test('local board export without attachments uses .kanbaya and merges without du
   await page.locator('[data-act="board-menu"]').click();
   const pending = page.waitForEvent('download');
   await page.locator('[data-act="export-board"]').click();
+  const filenameDialog = page.getByRole('dialog', { name: 'Backup filename' });
+  await expect(filenameDialog.getByLabel('Backup filename')).toHaveValue(/^Tablero_0-\d{4}-\d{2}-\d{2}\.kanbaya$/);
+  await filenameDialog.getByLabel('Backup filename').fill('Panel.KANBAYA');
+  await filenameDialog.getByRole('button', { name: 'Export', exact: true }).click();
   const download = await pending;
-  expect(download.suggestedFilename()).toMatch(/\.kanbaya$/);
+  expect(download.suggestedFilename()).toBe('Panel.KANBAYA');
   const buffer = await require('node:fs/promises').readFile(await download.path());
   expect(buffer.subarray(0, 8).toString()).toBe('KANBAYA4');
   const data = JSON.parse(buffer.subarray(12, 12 + buffer.readUInt32LE(8)).toString());
@@ -251,6 +258,24 @@ test('local board export without attachments uses .kanbaya and merges without du
   await expect(page.locator('.toast')).toContainText('1 board(s) imported');
   expect(await db(page, store => store.db.boards.count())).toBe(2);
   expect(await db(page, store => store.db.cards.count())).toBe(4);
+});
+test('local export rejects invalid names and can be cancelled', async ({ page }) => {
+  await seed(page, fixture(4));
+  let downloads = 0;
+  page.on('download', () => downloads++);
+  await page.locator('[data-act="data-menu"]').click();
+  await page.getByRole('menuitem', { name: 'Export all boards (backup)' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Backup filename' });
+  const input = dialog.getByLabel('Backup filename');
+  for (const value of ['', 'bad/name', 'CON']) {
+    await input.fill(value);
+    await dialog.getByRole('button', { name: 'Export', exact: true }).click();
+    await expect(input).toHaveJSProperty('validationMessage', 'Enter a valid filename without path separators or reserved characters.');
+    await expect(dialog).toBeVisible();
+  }
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(downloads).toBe(0);
 });
 for (const preferred of ['local', 'backup']) {
   test(`merges matching boards and uses ${preferred} for conflicting cards and lanes`, async ({ page }) => {
@@ -496,9 +521,9 @@ test('a cached previous release detects the deployed update on startup and prese
   await expect(page.locator('.card').filter({ hasText: 'Saved before updating' })).toBeVisible();
   expect(await db(page, store => store.db.cards.count())).toBe(4);
   const cachesAfterUpdate = await page.evaluate(() => caches.keys());
-  expect(cachesAfterUpdate).toContain('kanbaya-pwa-v32');
+  expect(cachesAfterUpdate).toContain('kanbaya-pwa-v33');
   expect(cachesAfterUpdate).not.toContain('kanbaya-pwa-v27');
-  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '32'))).toBe(true);
+  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '33'))).toBe(true);
 
   await context.setOffline(true);
   await page.reload();

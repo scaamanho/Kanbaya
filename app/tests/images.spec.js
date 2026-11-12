@@ -208,6 +208,7 @@ test('binary backups merge identical boards preserving image IDs, bytes and refe
   await page.locator('[data-act="data-menu"]').click();
   const pending = page.waitForEvent('download');
   await page.getByRole('menuitem', { name: 'Export all boards (backup)' }).click();
+  await page.getByRole('dialog', { name: 'Backup filename' }).getByRole('button', { name: 'Export', exact: true }).click();
   const backup = await pending;
   expect(backup.suggestedFilename()).toMatch(/\.kanbaya$/);
   const buffer = await fs.readFile(await backup.path());
@@ -359,6 +360,7 @@ test('multi-file failures and truncated backups never partially save images', as
   await page.locator('[data-act="data-menu"]').click();
   const pending = page.waitForEvent('download');
   await page.getByRole('menuitem', { name: 'Export all boards (backup)' }).click();
+  await page.getByRole('dialog', { name: 'Backup filename' }).getByRole('button', { name: 'Export', exact: true }).click();
   const download = await pending;
   const buffer = await fs.readFile(await download.path());
   await page.locator('#import-file').setInputFiles({

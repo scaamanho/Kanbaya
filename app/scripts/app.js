@@ -1024,7 +1024,7 @@ const answer = 42;
     render();
   }
 
-  function appDialog(message, { confirmLabel = 'Confirm', value, maxLength } = {}) {
+  function appDialog(message, { confirmLabel = 'Confirm', value, maxLength, validate } = {}) {
     return new Promise(resolve => {
       const previousFocus = document.activeElement;
       const dialog = document.createElement('dialog');
@@ -1036,6 +1036,14 @@ const answer = 42;
         <div class="actions"><button type="button" class="btn" value="cancel">Cancel</button><button class="btn primary" value="confirm">${esc(confirmLabel)}</button></div>
       </form>`;
       $('button[value="cancel"]', dialog).addEventListener('click', () => dialog.close());
+      if (validate) {
+        const input = $('#app-dialog-input', dialog);
+        input.addEventListener('input', () => input.setCustomValidity(''));
+        $('form', dialog).addEventListener('submit', event => {
+          input.setCustomValidity(validate(input.value));
+          if (!input.reportValidity()) event.preventDefault();
+        });
+      }
       dialog.addEventListener('click', event => event.stopPropagation());
       dialog.addEventListener('keydown', event => event.stopPropagation());
       dialog.addEventListener('close', () => {
@@ -1112,10 +1120,27 @@ const answer = 42;
     const a = Object.assign(document.createElement('a'), { href: url, download: name });
     document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  function backupFilenameError(value) {
+    const name = value.trim(), base = name.replace(/\.kanbaya$/i, '');
+    if (!base || /[<>:"/\\|?*\x00-\x1f]/.test(name) || /[. ]$/.test(name) ||
+        /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name)) {
+      return 'Enter a valid filename without path separators or reserved characters.';
+    }
+    return '';
+  }
+  function backupFilename(value, extension) {
+    const name = value.trim();
+    return name.toLowerCase().endsWith(`.${extension}`) ? name : `${name}.${extension}`;
+  }
   async function exportBoards(boards, name, includeTemplates = false) {
+    const filename = await appDialog('Backup filename', {
+      confirmLabel: 'Export', value: `${name || 'kanbaya'}-${todayStr()}.kanbaya`,
+      maxLength: 200, validate: backupFilenameError
+    });
+    if (filename === null) return;
     await flush();
     const backup = await store.exportBackup(boards.map(b => b.id), includeTemplates);
-    download(`${name || 'kanbaya'}-${todayStr()}.${backup.extension}`, backup.blob);
+    download(backupFilename(filename, backup.extension), backup.blob);
   }
   function mergeConflictDialog(board, conflicts) {
     return new Promise(resolve => {
@@ -1295,23 +1320,27 @@ const answer = 42;
     const drive = window.KanbayaDrive;
     const focusSelector = board ? '[data-act="board-menu"]' : '[data-act="data-menu"]';
     const previousFocus = $(focusSelector);
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const defaultName = `kanbaya-${board ? board.name.replace(/[^\w-]+/g, '_') + '-' : ''}${stamp}.kanbaya`;
     const dialog = document.createElement('dialog');
     dialog.className = 'modal narrow app-dialog drive-dialog';
     dialog.setAttribute('aria-labelledby', 'drive-title');
     dialog.innerHTML = `<h3 id="drive-title">${mode === 'save' ? (board ? 'Save this board to Google Drive' : 'Save backup to Google Drive') : 'Import backup from Google Drive'}</h3>
       <p class="muted">Manual backups only. Google receives a copy when you save; your local boards are not synchronized.</p>
       <button type="button" class="btn" data-drive="connect">Load Google sign-in</button>
-      ${mode === 'save' ? `<p>${board ? `Save only the board <strong>${esc(board.name)}</strong> and its attachments. Other boards and personal templates are not included.` : 'Save all boards, templates and attachments.'} Each save creates a new dated backup in the Kanbaya Backups folder.</p><button type="button" class="btn primary" data-drive="save" disabled>Save backup</button>`
+      ${mode === 'save' ? `<p>${board ? `Save only the board <strong>${esc(board.name)}</strong> and its attachments. Other boards and personal templates are not included.` : 'Save all boards, templates and attachments.'} Each save creates a new backup in the Kanbaya Backups folder.</p><label for="drive-filename">Backup filename</label><input id="drive-filename" type="text" maxlength="200" value="${esc(defaultName)}"><div class="drive-actions"><button type="button" class="btn primary" data-drive="save" disabled>Save backup</button></div>`
         : '<p>Only backups created by Kanbaya through this integration are listed. Import merges boards with matching IDs and asks how to resolve conflicts.</p><label for="drive-backup">Backup</label><select id="drive-backup" disabled><option value="">Connect to list backups</option></select><div class="drive-actions"><button type="button" class="btn" data-drive="refresh" disabled>Refresh</button><button type="button" class="btn primary" data-drive="import" disabled>Import backup</button></div>'}
       <p class="drive-status" role="status" aria-live="polite"></p>
       <div class="actions"><button type="button" class="btn" data-drive="close">Close</button></div>`;
     const connect = $('[data-drive="connect"]', dialog), select = $('select', dialog), close = $('[data-drive="close"]', dialog);
+    const filename = $('#drive-filename', dialog);
     const status = $('.drive-status', dialog);
     let busy = false, identityLoaded = false;
     function updateControls() {
       connect.disabled = busy;
       connect.textContent = identityLoaded ? 'Connect / change Google account' : 'Load Google sign-in';
       close.disabled = busy;
+      if (filename) filename.disabled = busy;
       $$('[data-drive="save"], [data-drive="refresh"]', dialog).forEach(button => { button.disabled = busy || !drive.connected(); });
       if (select) {
         select.disabled = busy || !drive.connected();
@@ -1347,17 +1376,20 @@ const answer = 42;
       if (select) await refreshFiles();
       else message('Connected. Ready to save a backup.');
     }, 'Connecting to Google Drive...');
-    $('[data-drive="save"]', dialog)?.addEventListener('click', () => perform(async () => {
-      if (hasDescriptionChanges()) throw new Error('Save or cancel the description before creating a backup.');
-      if (board && !boardById(board.id)) throw new Error('This board is no longer available. Close this dialog and select another board.');
-      let backup;
-      await run(async () => { backup = await store.exportBackup(board ? [board.id] : state.boards.map(board => board.id), !board); });
-      if (!backup) throw new Error('Could not read the backup. Check the application error notification.');
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const name = `kanbaya-${board ? board.name.replace(/[^\w-]+/g, '_') + '-' : ''}${stamp}.${backup.extension}`;
-      await drive.upload(backup, name);
-      message(`Backup saved in Google Drive: ${name}`);
-    }, 'Saving backup to Google Drive...'));
+    $('[data-drive="save"]', dialog)?.addEventListener('click', () => {
+      const error = backupFilenameError(filename.value);
+      if (error) { message(error, true); filename.focus(); return; }
+      perform(async () => {
+        if (hasDescriptionChanges()) throw new Error('Save or cancel the description before creating a backup.');
+        if (board && !boardById(board.id)) throw new Error('This board is no longer available. Close this dialog and select another board.');
+        let backup;
+        await run(async () => { backup = await store.exportBackup(board ? [board.id] : state.boards.map(board => board.id), !board); });
+        if (!backup) throw new Error('Could not read the backup. Check the application error notification.');
+        const name = backupFilename(filename.value, backup.extension);
+        await drive.upload(backup, name);
+        message(`Backup saved in Google Drive: ${name}`);
+      }, 'Saving backup to Google Drive...');
+    });
     $('[data-drive="refresh"]', dialog)?.addEventListener('click', () => perform(refreshFiles, 'Loading backups...'));
     $('[data-drive="import"]', dialog)?.addEventListener('click', () => perform(async () => {
       const file = await drive.download(select.value);

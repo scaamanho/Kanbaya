@@ -122,13 +122,13 @@ When opening `app/` on the same origin after using version 23 at the repository 
 
 When changing production resources, update the version in `app/scripts/boot.js`, `app/sw.js`, their precache entries, and the versioned references in `app/index.html` together. Do not change a published schema under the same version number: add a new Dexie version and its migration.
 
-Product **1.1.0**, including Google Drive backups, uses coordinated asset/cache version **32**, so earlier installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database migration or reinstall is needed for this release.
+Product **1.1.0**, including Google Drive backups, uses coordinated asset/cache version **33**, so earlier installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database migration or reinstall is needed for this release.
 
 ## Backups and recovery
 
 Data belongs to the **browser origin**; changing the domain, port, profile, or browser does not move the database. There is no cross-device synchronization. IndexedDB and persistent storage requests do not guarantee protection against profile deletion, quotas, private browsing, or browser eviction.
 
-The application interface is in English. Regularly use **Data > Export all boards (backup)**. Export includes offscreen records. All complete backups, local and Google Drive, use the same `.kanbaya` binary format, whether or not they contain attachments: the eight-byte ASCII signature `KANBAYA4`, a four-byte little-endian JSON header length, the UTF-8 version 4 JSON header (including ordered attachment metadata in `images`), and the concatenated stored blobs (WebP/PNG/JPEG or gzip). There is no base64 conversion. Keep the whole file: both the JSON metadata and binary bytes are needed to restore attachments.
+The application interface is in English. Regularly use **Data > Export all boards (backup)**. Export includes offscreen records. When exporting locally or to Google Drive, you can edit the suggested filename; `.kanbaya` is added if omitted. All complete backups, local and Google Drive, use the same `.kanbaya` binary format, whether or not they contain attachments: the eight-byte ASCII signature `KANBAYA4`, a four-byte little-endian JSON header length, the UTF-8 version 4 JSON header (including ordered attachment metadata in `images`), and the concatenated stored blobs (WebP/PNG/JPEG or gzip). There is no base64 conversion. Keep the whole file: both the JSON metadata and binary bytes are needed to restore attachments.
 
 On failure, writes are blocked and recovery and reload options are offered:
 
@@ -142,7 +142,7 @@ Import accepts version 2 JSON and version 4 `.kanbaya`/`KANBAYA4` backups. Board
 
 Use **Data > Save backup to Google Drive…** or **Import backup from Google Drive…**, then **Connect / change Google account**. Saving copies all boards, templates and attachments into the visible **Kanbaya Backups** folder, without overwriting earlier backups. Import lists backups created through this integration and merges boards using the same rules as local import. Manually uploaded files are not listed; download those and use local import instead.
 
-For an individual board, open **Board menu > Save this board to Google Drive…**. This includes only that board and its attachments, not other boards or personal templates, matching local board export. The filename includes the board name and a timestamp. Every save creates a new backup, never overwriting an earlier file. Individual-board and full backups share the same Drive import action.
+For an individual board, open **Board menu > Save this board to Google Drive…**. This includes only that board and its attachments, not other boards or personal templates, matching local board export. The suggested filename includes the board name and a timestamp. Every save creates a new backup, never overwriting an earlier file, even when filenames are the same. Individual-board and full backups share the same Drive import action.
 
 [drive.js](app/scripts/drive.js) defines the public OAuth `CLIENT_ID`, requests only `drive.file`, and keeps access tokens in memory, never in IndexedDB, localStorage, sessionStorage or backups. Reloading requires reconnecting; closing the dialog does not sign out of Google or revoke previously granted permission. Expired/revoked authorization asks you to connect again. The integration uses resumable upload sessions, but does not automatically retry or resume interrupted transfers.
 

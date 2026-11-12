@@ -95,12 +95,14 @@ for (const withAttachment of [false, true]) {
     await connect(dialog);
     const config = await page.evaluate(() => window.testOAuthConfig);
     expect(config).toEqual({ clientId: '54984532757-hr8smhh2lb9fctmcdc9obq26voqgv2ps.apps.googleusercontent.com', scope: SCOPE, includeGranted: false });
+    await expect(dialog.getByLabel('Backup filename')).toHaveValue(/^kanbaya-\d{4}-\d{2}-\d{2}T.*\.kanbaya$/);
+    await dialog.getByLabel('Backup filename').fill(withAttachment ? 'Con adjunto.KANBAYA' : 'Copia global');
     await dialog.getByRole('button', { name: 'Save backup', exact: true }).click();
     await expect(dialog.getByRole('status')).toContainText('Backup saved in Google Drive');
     expect(mock.calls.every(call => call.authorization === 'Bearer drive-test-token')).toBe(true);
     const metadata = JSON.parse(mock.calls.find(call => call.method === 'POST' && call.url.includes('uploadType=resumable')).body.toString());
     expect(metadata.parents).toEqual(['backup-folder']);
-    expect(metadata.name).toMatch(/\.kanbaya$/);
+    expect(metadata.name).toBe(withAttachment ? 'Con adjunto.KANBAYA' : 'Copia global.kanbaya');
     expect(mock.uploaded().subarray(0, 8).toString()).toBe('KANBAYA4');
     const data = JSON.parse(mock.uploaded().subarray(12, 12 + mock.uploaded().readUInt32LE(8)).toString());
     expect(data.boards).toHaveLength(2);
@@ -158,17 +160,15 @@ for (const withAttachment of [false, true]) {
     await expect(dialog).toContainText('Other boards and personal templates are not included.');
     await connect(dialog);
     for (let save = 0; save < 2; save++) {
+      if (save === 1) await dialog.getByLabel('Backup filename').fill('Mi tablero');
       await dialog.getByRole('button', { name: 'Save backup', exact: true }).click();
       await expect(dialog.getByRole('status')).toContainText('Backup saved in Google Drive');
     }
     const uploads = mock.calls.filter(call => call.method === 'POST' && call.url.includes('uploadType=resumable'));
     expect(uploads).toHaveLength(2);
     expect(mock.calls.some(call => call.method === 'PATCH')).toBe(false);
-    for (const call of uploads) {
-      const { name } = JSON.parse(call.body.toString());
-      expect(name).toMatch(/^kanbaya-Tablero_0-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\./);
-      expect(name.endsWith('.kanbaya')).toBe(true);
-    }
+    expect(JSON.parse(uploads[0].body.toString()).name).toMatch(/^kanbaya-Tablero_0-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.kanbaya$/);
+    expect(JSON.parse(uploads[1].body.toString()).name).toBe('Mi tablero.kanbaya');
     const bytes = mock.uploaded();
     expect(bytes.subarray(0, 8).toString()).toBe('KANBAYA4');
     const data = JSON.parse(bytes.subarray(12, 12 + bytes.readUInt32LE(8)).toString());
@@ -214,6 +214,20 @@ for (const withAttachment of [false, true]) {
     expect(restored.attachments).toEqual(data.images.map(image => image.id));
   });
 }
+
+test('Drive rejects invalid backup filenames without uploading', async ({ page }) => {
+  const mock = await mockDrive(page);
+  await seed(page, fixture(4));
+  const dialog = await openDrive(page, 'save');
+  await connect(dialog);
+  for (const value of ['', 'bad\\name', 'NUL']) {
+    await dialog.getByLabel('Backup filename').fill(value);
+    await dialog.getByRole('button', { name: 'Save backup', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toContainText('Enter a valid filename');
+  }
+  expect(mock.calls.some(call => call.url.includes('uploadType=resumable'))).toBe(false);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+});
 
 for (const choice of ['Keep local version', 'Use backup version', 'Cancel import']) {
   test(`Drive resolves differing boards with "${choice}" without duplicating IDs`, async ({ page }) => {
