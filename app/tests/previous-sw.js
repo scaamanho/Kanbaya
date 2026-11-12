@@ -1,6 +1,6 @@
 const VERSION = '27';
 const CACHE = 'kanbaya-pwa-v' + VERSION;
-const SCRIPTS = ['vendor/dexie.min.js', 'vendor/marked.umd.js', 'vendor/purify.min.js', 'scripts/storage.js', 'scripts/virtual.js', 'scripts/app.js'];
+const SCRIPTS = ['vendor/dexie.min.js', 'vendor/marked.umd.js', 'vendor/purify.min.js', 'scripts/storage.js', 'scripts/virtual.js', 'scripts/drive.js', 'scripts/app.js'];
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);

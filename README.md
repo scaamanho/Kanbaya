@@ -26,9 +26,13 @@ Serve the repository directory over HTTPS, or localhost for development. For exa
 node app\tests\server.js
 ```
 
-When the server starts, it prints a clickable link to the application: `http://127.0.0.1:8765/app/`. Open `http://127.0.0.1:8765/` for the product website. This server is for development only. For production, publish the root `index.html`, `site.css`, `site.js`, and `assets/`, together with `app/index.html`, `app/manifest.webmanifest`, `app/sw.js`, and the `app/scripts/`, `app/css/`, `app/vendor/`, and `app/icons/` directories under the same `app/` path. Do not publish `node_modules/`, `tests/`, or test reports. Opening the HTML using `file:` does not provide the expected PWA functionality.
+When the server starts, it prints a clickable link to the application: `http://127.0.0.1:8765/app/`. Open `http://127.0.0.1:8765/` for the product website. This server is for development only. For production, publish the root `index.html`, `site.css`, `site.js`, `assets/`, `info/`, and `LICENSE`, together with `app/index.html`, `app/manifest.webmanifest`, `app/sw.js`, and the `app/scripts/`, `app/css/`, `app/vendor/`, and `app/icons/` directories under the same `app/` path. Do not publish `node_modules/`, `tests/`, or test reports. Opening the HTML using `file:` does not provide the expected PWA functionality.
 
 The website's **Install Kanbaya** button opens the application with an installation banner. Its **Install** button opens the native prompt when the browser provides one; otherwise it explains how to use the browser's install option. Availability depends on browser, device, and install status.
+
+For Google Drive backups, see the [step-by-step Google Cloud setup guide (Spanish)](app/docs/GOOGLE_DRIVE_SETUP.md), including the OAuth configuration and usage instructions.
+
+The public [Privacy Policy](info/privacy.html) and [Terms of Service](info/terms.html) are linked from the product website footer and work without JavaScript. Publish them before adding their full URLs in Google Auth Platform's Branding settings. Review these texts for your deployment, operator/contact details and applicable legal obligations; they describe the current implementation, not a guarantee of legal compliance or Google verification.
 
 Dexie is bundled locally in [vendor/dexie.min.js](app/vendor/dexie.min.js), with its [Apache-2.0 license](app/vendor/dexie.LICENSE). Markdown uses bundled [Marked](app/vendor/marked.umd.js) ([MIT license](app/vendor/marked.LICENSE)) and [DOMPurify](app/vendor/purify.min.js) ([Apache-2.0 license](app/vendor/dompurify.LICENSE)). These libraries are not downloaded from a CDN when the application runs.
 
@@ -118,7 +122,7 @@ When opening `app/` on the same origin after using version 23 at the repository 
 
 When changing production resources, update the version in `app/scripts/boot.js`, `app/sw.js`, their precache entries, and the versioned references in `app/index.html` together. Do not change a published schema under the same version number: add a new Dexie version and its migration.
 
-Product **1.1.0** uses coordinated asset/cache version **28**, so existing version **27** installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database migration or reinstall is needed for this release.
+Product **1.1.0**, including Google Drive backups, uses coordinated asset/cache version **29**, so earlier installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database migration or reinstall is needed for this release.
 
 ## Backups and recovery
 
@@ -133,6 +137,14 @@ On failure, writes are blocked and recovery and reload options are offered:
 - A partial draft **is not a complete importable backup**. Do not delete the database or reload with an important draft without exporting it first.
 
 Import accepts version 2 JSON and version 4 `.kanbaya`/`KANBAYA4` backups. It regenerates board, card, and attachment IDs and their references (including description images), so internal board links change. Older application versions cannot import version 4 backups. The existing "Delete all data" command deletes boards and their attachments but keeps the theme and templates.
+
+### Google Drive backups
+
+Use **Data > Save backup to Google Drive…** or **Import backup from Google Drive…**, then **Connect / change Google account**. Saving copies all boards, templates and attachments into the visible **Kanbaya Backups** folder, without overwriting earlier backups. Import lists backups created through this integration and adds independent copies of their boards using the same validation and formats as local import. Manually uploaded files are not listed; download those and use local import instead.
+
+[drive.js](app/scripts/drive.js) defines the public OAuth `CLIENT_ID`, requests only `drive.file`, and keeps access tokens in memory, never in IndexedDB, localStorage, sessionStorage or backups. Reloading requires reconnecting; closing the dialog does not sign out of Google or revoke previously granted permission. Expired/revoked authorization asks you to connect again. The integration uses resumable upload sessions, but does not automatically retry or resume interrupted transfers.
+
+Opening a Drive dialog loads Google's Identity Services library from `https://accounts.google.com/gsi/client`; connecting contacts Google for consent. Saving sends the backup to Google Drive; listing and import also require Internet access. There is no automatic cloud sync. Core editing and local backups still work offline, and no Google request is needed at application startup. For local OAuth testing, authorize and open `http://localhost:8765`, not the different `127.0.0.1` origin. The production origin must also be authorized in Google Cloud.
 
 ## Development tests
 

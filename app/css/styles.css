@@ -417,6 +417,9 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none 
 }
 .app-dialog::backdrop { background: var(--overlay); }
 .app-dialog p { overflow-wrap: anywhere; }
+.drive-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.drive-status { min-height: 1.4em; }
+.drive-status[role="alert"] { color: var(--danger); }
 .app-dialog label { display: block; margin-bottom: 6px; color: var(--muted); }
 .m-title { width: calc(100% - 40px); font-size: 20px; font-weight: 700; background: transparent; border: 2px solid transparent; border-radius: 6px; padding: 4px 8px; margin-left: -8px; }
 .m-title-row { position: relative; display: flex; align-items: center; gap: 6px; margin-right: 36px; }

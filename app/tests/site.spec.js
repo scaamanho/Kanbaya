@@ -63,6 +63,26 @@ for (const width of [1280, 390]) {
 test.describe('without JavaScript', () => {
   test.use({ javaScriptEnabled: false });
 
+  for (const { width, base } of [{ width: 1280, base: '/' }, { width: 390, base: '/project/' }, { width: 320, base: '/project/' }]) {
+    test(`public information pages work at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      for (const { title, file } of [{ title: 'Privacy Policy', file: 'privacy.html' }, { title: 'Terms of Service', file: 'terms.html' }]) {
+        await page.goto(base);
+        await page.getByRole('contentinfo').getByRole('link', { name: title, exact: true }).click();
+        await expect(page).toHaveURL(new RegExp(`${base}info/${file.replace('.', '\\.')}$`));
+        await expect(page.getByRole('heading', { level: 1, name: title, exact: true })).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+        for (const image of await page.locator('img').all()) {
+          await expect.poll(() => image.evaluate(el => el.complete && el.naturalWidth > 0)).toBe(true);
+        }
+        const links = await page.locator('a[href]').evaluateAll(elements => [...new Set(elements.map(el => el.href).filter(href => new URL(href).origin === location.origin && !href.includes('#')))]);
+        for (const link of links) expect((await page.request.get(link)).status(), link).toBe(200);
+        await page.getByRole('contentinfo').getByRole('link', { name: 'Home', exact: true }).click();
+        await expect(page).toHaveURL(new RegExp(`${base}$`));
+      }
+    });
+  }
+
   test('screenshot links still open the full image', async ({ page }) => {
     await page.goto('/project/');
     await page.getByRole('link', { name: /View full screenshot: Board statistics/ }).click();

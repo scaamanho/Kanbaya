@@ -1119,33 +1119,126 @@ const answer = 42;
   $('#import-file').addEventListener('change', async e => {
     const file = e.target.files[0]; e.target.value = ''; if (!file) return;
     try {
-      const { data, images } = await store.parseBackup(file);
-      const source = (Array.isArray(data?.boards) ? data.boards : data?.lists ? [data] : []).map(normBoard).filter(Boolean);
-      const list = source.map(reid), staged = [], used = new Set();
-      const imageMap = new Map(images.map(image => [image.id, image]));
-      for (let bi = 0; bi < source.length; bi++) for (let li = 0; li < source[bi].lists.length; li++) {
-        for (let ci = 0; ci < source[bi].lists[li].cards.length; ci++) {
-          const card = source[bi].lists[li].cards[ci], copy = list[bi].lists[li].cards[ci], ids = new Map();
-          for (const id of card.imageIds || []) {
-            const image = imageMap.get(id);
-            if (!image || used.has(id) || image.boardId !== source[bi].id || image.cardId !== card.id) throw new Error('Invalid attachment reference in backup.');
-            used.add(id);
-            const nextId = uid();
-            ids.set(id, nextId);
-            staged.push({ ...image, id: nextId, boardId: list[bi].id, cardId: copy.id });
-          }
-          if (card.imageIds) {
-            if (card.coverImageId && !isImage(imageMap.get(card.coverImageId))) throw new Error('Invalid cover in backup.');
-            copy.imageIds = [...ids.values()]; copy.coverImageId = ids.get(card.coverImageId) || null;
-            copy.desc = KanbayaStore.remapDescription(copy.desc, ids);
-          }
-        }
-      }
-      if (used.size !== images.length) throw new Error('The backup contains orphaned attachments.');
-      if (!list.length) throw new Error('empty');
-      await run(() => mutate(() => { staged.forEach(image => store.stageImage(image)); state.boards.push(...list); if (Array.isArray(data.templates)) state.templates.push(...data.templates.map(t => ({ id: uid(), title: String(t.title || 'Template').slice(0, 100), desc: String(t.desc || ''), checklist: Array.isArray(t.checklist) ? t.checklist.map(x => String(x).slice(0, 200)) : [] }))); }, `${list.length} board(s) imported`));
+      const apply = await prepareBackupImport(file);
+      await run(apply);
     } catch (error) { console.error('Kanbaya: import', error); toast('⚠ The file is not a valid Kanbaya backup'); }
   });
+  async function prepareBackupImport(file) {
+    const { data, images } = await store.parseBackup(file);
+    const source = (Array.isArray(data?.boards) ? data.boards : data?.lists ? [data] : []).map(normBoard).filter(Boolean);
+    const list = source.map(reid), staged = [], used = new Set();
+    const imageMap = new Map(images.map(image => [image.id, image]));
+    for (let bi = 0; bi < source.length; bi++) for (let li = 0; li < source[bi].lists.length; li++) {
+      for (let ci = 0; ci < source[bi].lists[li].cards.length; ci++) {
+        const card = source[bi].lists[li].cards[ci], copy = list[bi].lists[li].cards[ci], ids = new Map();
+        for (const id of card.imageIds || []) {
+          const image = imageMap.get(id);
+          if (!image || used.has(id) || image.boardId !== source[bi].id || image.cardId !== card.id) throw new Error('Invalid attachment reference in backup.');
+          used.add(id);
+          const nextId = uid();
+          ids.set(id, nextId);
+          staged.push({ ...image, id: nextId, boardId: list[bi].id, cardId: copy.id });
+        }
+        if (card.imageIds) {
+          if (card.coverImageId && !isImage(imageMap.get(card.coverImageId))) throw new Error('Invalid cover in backup.');
+          copy.imageIds = [...ids.values()]; copy.coverImageId = ids.get(card.coverImageId) || null;
+          copy.desc = KanbayaStore.remapDescription(copy.desc, ids);
+        }
+      }
+    }
+    if (used.size !== images.length) throw new Error('The backup contains orphaned attachments.');
+    if (!list.length) throw new Error('empty');
+    return () => mutate(() => { staged.forEach(image => store.stageImage(image)); state.boards.push(...list); if (Array.isArray(data.templates)) state.templates.push(...data.templates.map(t => ({ id: uid(), title: String(t.title || 'Template').slice(0, 100), desc: String(t.desc || ''), checklist: Array.isArray(t.checklist) ? t.checklist.map(x => String(x).slice(0, 200)) : [] }))); }, `${list.length} board(s) imported`);
+  }
+
+  function driveBackupDialog(mode) {
+    const drive = window.KanbayaDrive;
+    const previousFocus = $('[data-act="data-menu"]');
+    const dialog = document.createElement('dialog');
+    dialog.className = 'modal narrow app-dialog drive-dialog';
+    dialog.setAttribute('aria-labelledby', 'drive-title');
+    dialog.innerHTML = `<h3 id="drive-title">${mode === 'save' ? 'Save backup to Google Drive' : 'Import backup from Google Drive'}</h3>
+      <p class="muted">Manual backups only. Google receives a copy when you save; your local boards are not synchronized.</p>
+      <button type="button" class="btn" data-drive="connect">Load Google sign-in</button>
+      ${mode === 'save' ? '<p>Save all boards, templates and attachments in the Kanbaya Backups folder.</p><button type="button" class="btn primary" data-drive="save" disabled>Save backup</button>'
+        : '<p>Only backups created by Kanbaya through this integration are listed. Import adds copies of their boards; it does not replace existing boards.</p><label for="drive-backup">Backup</label><select id="drive-backup" disabled><option value="">Connect to list backups</option></select><div class="drive-actions"><button type="button" class="btn" data-drive="refresh" disabled>Refresh</button><button type="button" class="btn primary" data-drive="import" disabled>Import backup</button></div>'}
+      <p class="drive-status" role="status" aria-live="polite"></p>
+      <div class="actions"><button type="button" class="btn" data-drive="close">Close</button></div>`;
+    const connect = $('[data-drive="connect"]', dialog), select = $('select', dialog), close = $('[data-drive="close"]', dialog);
+    const status = $('.drive-status', dialog);
+    let busy = false, identityLoaded = false;
+    function updateControls() {
+      connect.disabled = busy;
+      connect.textContent = identityLoaded ? 'Connect / change Google account' : 'Load Google sign-in';
+      close.disabled = busy;
+      $$('[data-drive="save"], [data-drive="refresh"]', dialog).forEach(button => { button.disabled = busy || !drive.connected(); });
+      if (select) {
+        select.disabled = busy || !drive.connected();
+        $('[data-drive="import"]', dialog).disabled = busy || !drive.connected() || !select.value;
+      }
+    }
+    function message(text, error = false) {
+      status.textContent = text;
+      status.setAttribute('role', error ? 'alert' : 'status');
+    }
+    async function perform(task, text) {
+      busy = true; updateControls(); message(text);
+      try { await task(); }
+      catch (error) { console.error('Kanbaya: Google Drive', error); message(error.message, true); }
+      finally { busy = false; updateControls(); }
+    }
+    async function refreshFiles() {
+      const files = await drive.list();
+      select.replaceChildren(new Option(files.length ? 'Select a backup' : 'No Kanbaya backups found', ''));
+      files.forEach(file => select.add(new Option(file.name, file.id)));
+      message(files.length ? 'Select a backup to import.' : 'No backups found. Save a backup with Kanbaya first.');
+    }
+    async function prepareSignIn() {
+      await drive.prepare();
+      identityLoaded = true;
+      if (drive.connected() && select) await refreshFiles();
+      else message(drive.connected() ? 'Connected. Ready to save a backup.' : 'Connect your Google account to continue.');
+    }
+    connect.onclick = () => perform(async () => {
+      if (!identityLoaded) { await prepareSignIn(); return; }
+      if (select) select.replaceChildren(new Option('Connect to list backups', ''));
+      await drive.connect();
+      if (select) await refreshFiles();
+      else message('Connected. Ready to save a backup.');
+    }, 'Connecting to Google Drive...');
+    $('[data-drive="save"]', dialog)?.addEventListener('click', () => perform(async () => {
+      if (hasDescriptionChanges()) throw new Error('Save or cancel the description before creating a backup.');
+      let backup;
+      await run(async () => { backup = await store.exportBackup(state.boards.map(board => board.id), true); });
+      if (!backup) throw new Error('Could not read the backup. Check the application error notification.');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const name = `kanbaya-${stamp}.${backup.extension}`;
+      await drive.upload(backup, name);
+      message(`Backup saved in Google Drive: ${name}`);
+    }, 'Saving backup to Google Drive...'));
+    $('[data-drive="refresh"]', dialog)?.addEventListener('click', () => perform(refreshFiles, 'Loading backups...'));
+    $('[data-drive="import"]', dialog)?.addEventListener('click', () => perform(async () => {
+      const file = await drive.download(select.value);
+      const apply = await prepareBackupImport(file);
+      let committed = false;
+      await run(async () => { apply(); await flush(); committed = true; });
+      if (!committed) throw new Error('The backup could not be imported. Check the application error notification.');
+      message('Backup imported. Copies were added to your local boards.');
+    }, 'Downloading and importing backup...'));
+    select?.addEventListener('change', updateControls);
+    close.onclick = () => dialog.close();
+    dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
+    dialog.addEventListener('click', event => event.stopPropagation());
+    dialog.addEventListener('keydown', event => event.stopPropagation());
+    dialog.addEventListener('close', () => {
+      dialog.remove();
+      const focus = previousFocus?.isConnected ? previousFocus : $('[data-act="data-menu"]');
+      if (focus && !focus.closest('[inert]')) focus.focus({ preventScroll: true });
+    }, { once: true });
+    document.body.append(dialog);
+    dialog.showModal();
+    perform(prepareSignIn, 'Loading Google sign-in...');
+  }
 
   /* ---------------- Acciones ---------------- */
   const A = {
@@ -1165,6 +1258,9 @@ const answer = 42;
       openMenu(el, [
         { label: 'Export all boards (backup)', fn: () => exportBoards(state.boards, 'kanbaya', true) },
         { label: 'Import from file…', fn: () => $('#import-file').click() },
+        { sep: true },
+        { label: 'Save backup to Google Drive…', fn: () => driveBackupDialog('save') },
+        { label: 'Import backup from Google Drive…', fn: () => driveBackupDialog('import') },
         { sep: true },
         { label: 'Delete all data', danger: true, fn: async () => { if (await confirmAction('Delete ALL boards from this browser? This action cannot be undone (export a backup first).')) { state.boards = []; save(); location.hash = '#/'; render(); } } }
       ]);

@@ -1,6 +1,6 @@
 'use strict';
 (() => {
-  const VERSION = '28';
+  const VERSION = '29';
   let installEvent = null;
   const installBanner = document.createElement('section');
   installBanner.className = 'install-banner';
@@ -47,7 +47,7 @@
       notifyInstallChange();
     }
   });
-  const scripts = ['vendor/dexie.min.js', 'vendor/marked.umd.js', 'vendor/purify.min.js', 'scripts/storage.js', 'scripts/virtual.js', 'scripts/app.js'];
+  const scripts = ['vendor/dexie.min.js', 'vendor/marked.umd.js', 'vendor/purify.min.js', 'scripts/storage.js', 'scripts/virtual.js', 'scripts/drive.js', 'scripts/app.js'];
   const load = src => new Promise((resolve, reject) => {
     const script = document.createElement('script');
     script.src = `${src}?v=${VERSION}`;
