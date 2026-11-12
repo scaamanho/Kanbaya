@@ -2,6 +2,7 @@
 /* Persistence boundary. UI windows contain summaries; complete cards are read on demand. */
 (() => {
   const clone = value => structuredClone(value);
+  const dateKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const clean = row => Object.fromEntries(Object.entries(row).filter(([key]) => !key.startsWith('_')));
   const meta = row => Object.fromEntries(Object.entries(clean(row)).filter(([key]) => !['lists', 'cards', 'cardCount', 'listCount', 'wipCount'].includes(key)));
   const spaced = (items, step = 1024) => {
@@ -189,15 +190,27 @@
       return this.db.transaction('r', this.db.cards, async () => {
         const cards = (await this.db.cards.where('boardId').equals(board.id).toArray()).filter(card => !card.archived);
         const listCounts = new Map(board.lists.map(list => [list.id, 0]));
-        const priorityLabels = { low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical' };
+        const priorityLabels = { low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical', '': 'No priority' };
         const priorityCounts = new Map(Object.keys(priorityLabels).map(priority => [priority, 0]));
         const today = new Date();
-        const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        const todayKey = dateKey(today), nextWeek = new Date(today);
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        const nextWeekKey = dateKey(nextWeek);
+        const dueCounts = { completed: 0, overdue: 0, today: 0, soon: 0, later: 0, none: 0 };
+        const labelCounts = new Map(board.labels.map(label => [label.id, 0]));
+        let noLabel = 0;
         let overdue = 0, withDue = 0, completed = 0, checkCount = 0, checkDone = 0;
         for (const card of cards) {
           listCounts.set(card.listId, (listCounts.get(card.listId) || 0) + 1);
           if (card.due) { withDue++; if (!card.completed && card.due < todayKey) overdue++; }
           if (card.completed) completed++;
+          const dueCategory = card.completed ? 'completed' : !card.due ? 'none' :
+            card.due < todayKey ? 'overdue' : card.due === todayKey ? 'today' : card.due <= nextWeekKey ? 'soon' : 'later';
+          dueCounts[dueCategory]++;
+          if (!card.labels.length) noLabel++;
+          for (const id of new Set(card.labels)) {
+            if (labelCounts.has(id)) labelCounts.set(id, labelCounts.get(id) + 1);
+          }
           if (priorityCounts.has(card.priority)) priorityCounts.set(card.priority, priorityCounts.get(card.priority) + 1);
           checkCount += card.checkCount || 0;
           checkDone += card.checkDone || 0;
@@ -206,7 +219,16 @@
           cards: cards.length, overdue, withDue, completed,
           checklists: checkCount ? Math.round(checkDone / checkCount * 100) : 0,
           lists: board.lists.map(list => ({ label: list.name, count: listCounts.get(list.id) || 0 })),
-          priorities: [...priorityCounts].filter(([, count]) => count).map(([priority, count]) => ({ label: priorityLabels[priority], priority, count }))
+          priorities: [...priorityCounts].map(([priority, count]) => ({ label: priorityLabels[priority], priority, count })),
+          labels: [...board.labels.map(label => ({ label: label.name || 'Unnamed label', color: label.color, count: labelCounts.get(label.id) })), { label: 'No label', count: noLabel }],
+          due: [
+            { label: 'Completed', count: dueCounts.completed },
+            { label: 'Overdue', count: dueCounts.overdue },
+            { label: 'Due today', count: dueCounts.today },
+            { label: 'Next 7 days', count: dueCounts.soon },
+            { label: 'Later', count: dueCounts.later },
+            { label: 'No due date', count: dueCounts.none }
+          ]
         };
       });
     }
@@ -506,8 +528,7 @@
     async listKeys(board, list, filters, q, archived = false, range = null) {
       const labels = new Map(board.labels.map(l => [l.id, l.name]));
       const today = new Date();
-      const date = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      const now = date(today), days = n => { const d = new Date(today); d.setDate(d.getDate() + n); return date(d); };
+      const now = dateKey(today), days = n => { const d = new Date(today); d.setDate(d.getDate() + n); return dateKey(d); };
       const matches = c => {
         if (q && !`${c.searchPrefix} ${c.labels.map(id => labels.get(id) || '').join(' ')} ${c.searchSuffix}`.toLowerCase().includes(q.toLowerCase())) return false;
         if (filters.status.length && !filters.status.some(s => s === 'completed' ? c.completed : !c.completed)) return false;

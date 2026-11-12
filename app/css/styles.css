@@ -380,13 +380,19 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none 
 .modal.narrow { width: min(440px, 100%); margin-top: 6vh; }
 .modal h3 { margin: 0 0 12px; font-size: 18px; }
 .modal h4 { margin: 18px 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.modal.statistics-modal { width: min(1000px, 100%); }
+.stats-intro { margin: 0 0 16px; color: var(--muted); }
 .stats-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 .stats-metric { display: flex; min-width: 0; min-height: 70px; flex-direction: column; justify-content: center; gap: 4px; padding: 10px 12px; border-radius: 8px; background: var(--hover); }
 .stats-metric strong { font-size: 22px; }
 .stats-metric span { color: var(--muted); font-size: 12px; }
-.stats-section h4 { margin-top: 18px; }
-.stats-row { display: grid; grid-template-columns: minmax(90px, 110px) minmax(0, 1fr) 24px; align-items: center; gap: 8px; min-height: 24px; font-size: 13px; }
-.stats-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.stats-section { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 10px; }
+.stats-section h4 { margin: 0 0 10px; color: var(--text); }
+.stats-section p { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.stats-row { display: grid; grid-template-columns: minmax(0, 140px) minmax(0, 1fr) 36px; align-items: center; gap: 8px; min-height: 28px; font-size: 13px; }
+.stats-row > span { min-width: 0; overflow-wrap: anywhere; }
+.stats-label-color { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; }
 .stats-row > strong { text-align: right; }
 .stats-track { height: 10px; overflow: hidden; border-radius: 999px; background: var(--hover); }
 .stats-track i { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
@@ -397,7 +403,8 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none 
 @media (max-width: 600px) {
   .stats-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stats-metric:last-child { grid-column: 1 / -1; }
-  .stats-row { grid-template-columns: minmax(72px, 96px) minmax(0, 1fr) 24px; gap: 6px; }
+  .stats-grid { grid-template-columns: minmax(0, 1fr); }
+  .stats-row { grid-template-columns: minmax(0, 120px) minmax(0, 1fr) 30px; gap: 6px; }
 }
 .modal-section { margin: 0 0 16px; }
 .modal-section summary { margin: 18px 0 8px; color: var(--muted); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; cursor: pointer; }

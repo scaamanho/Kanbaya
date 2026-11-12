@@ -222,6 +222,7 @@ test('new My first board shows priorities on its welcome cards', async ({ page }
   await expect(page.locator('.card').filter({ hasText: 'Install the app' }).locator('.priority-badge')).toHaveText('▲ Low');
 });
 test('board statistics summarize only the selected board', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-11-10T12:00:00'));
   const data = fixture(20);
   const cards = data.boards[0].lists[0].cards;
   cards[0].due = '2000-01-01';
@@ -246,6 +247,39 @@ test('board statistics summarize only the selected board', async ({ page }) => {
   await expect(page.locator('[data-stat-row="member"]')).toHaveCount(0);
   await expect(page.locator('[data-stat-row="priority"]').filter({ hasText: 'Critical' })).toContainText('1');
   await expect(page.locator('[data-stat-row="priority"]').filter({ hasText: 'Low' })).toContainText('1');
+});
+test('statistics break down labels, priorities and due dates without counting archived cards', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-11-12T12:00:00'));
+  const data = fixture(16), board = data.boards[0], cards = board.lists[0].cards;
+  board.labels.push({ id: 'extra', name: 'Client <Important> label', color: '#4bce97' });
+  cards[0].due = '2026-11-11'; cards[0].priority = 'high'; cards[0].labels = ['label0', 'extra'];
+  cards[1].due = '2026-11-12'; cards[1].labels = [];
+  cards[2].due = '2026-11-19'; cards[2].priority = 'low'; cards[2].labels = ['extra'];
+  cards[3].due = '2026-11-20'; cards[3].priority = 'medium';
+  cards[4].due = ''; cards[4].priority = 'critical'; cards[4].labels = [];
+  cards[5].due = '2000-01-01'; cards[5].completed = true; cards[5].labels = ['extra'];
+  cards[6].archived = true; cards[6].priority = 'high'; cards[6].labels = ['extra'];
+  cards[7].due = '2026-11-13';
+  await seed(page, data);
+  await page.locator('[data-act="board-menu"]').click();
+  await page.locator('[data-act="open-statistics"]').click();
+  await expect(page.locator('[data-stat="cards"]')).toHaveText('7');
+  for (const [label, count] of [['Urgente', 3], ['Client <Important> label', 3], ['No label', 2]]) {
+    await expect(page.locator('[data-stat-row="label"]').filter({ hasText: label }).locator('strong')).toHaveText(String(count));
+  }
+  for (const [label, count] of [['Low', 1], ['Medium', 1], ['High', 1], ['Critical', 1], ['No priority', 3]]) {
+    await expect(page.locator('[data-stat-row="priority"]').filter({ hasText: label }).locator('strong')).toHaveText(String(count));
+  }
+  for (const [label, count] of [['Completed', 1], ['Overdue', 1], ['Due today', 1], ['Next 7 days', 2], ['Later', 1], ['No due date', 1]]) {
+    await expect(page.locator('[data-stat-row="due"]').filter({ hasText: label }).locator('strong')).toHaveText(String(count));
+  }
+  await expect(page.locator('[data-stat-row="label"] .stats-label-color')).toHaveCount(2);
+  const modal = page.locator('.statistics-modal');
+  for (const [width, columns] of [[1280, 2], [320, 1]]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await modal.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    expect(await page.locator('.stats-grid').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBe(columns);
+  }
 });
 test('favorites persist and appear first in the Boards menu', async ({ page }) => {
   await page.goto('/app/');

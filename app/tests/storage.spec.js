@@ -568,9 +568,9 @@ test('a cached previous release detects the deployed update on startup and prese
   await expect(page.locator('.card').filter({ hasText: 'Saved before updating' })).toBeVisible();
   expect(await db(page, store => store.db.cards.count())).toBe(4);
   const cachesAfterUpdate = await page.evaluate(() => caches.keys());
-  expect(cachesAfterUpdate).toContain('kanbaya-pwa-v34');
+  expect(cachesAfterUpdate).toContain('kanbaya-pwa-v35');
   expect(cachesAfterUpdate).not.toContain('kanbaya-pwa-v27');
-  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '34'))).toBe(true);
+  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '35'))).toBe(true);
 
   await context.setOffline(true);
   await page.reload();

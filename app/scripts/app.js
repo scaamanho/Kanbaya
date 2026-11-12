@@ -924,15 +924,23 @@ const answer = 42;
       ['Checklists', 'checklists', `${stats.checklists}%`]
     ];
     const rows = (items, type) => {
-      const max = Math.max(1, ...items.map(item => item.count));
-      return items.map(item => `<div class="stats-row" data-stat-row="${type}"><span>${esc(item.label)}</span><div class="stats-track"><i class="${item.priority ? `priority-${item.priority}` : ''}" style="width:${item.count / max * 100}%"></i></div><strong>${item.count}</strong></div>`).join('');
+      const max = items.reduce((largest, item) => Math.max(largest, item.count), 1);
+      return items.map(item => {
+        const color = /^#[\da-f]{6}$/i.test(item.color) ? item.color : '';
+        return `<div class="stats-row" data-stat-row="${type}"><span>${color ? `<i class="stats-label-color" style="background:${color}" aria-hidden="true"></i>` : ''}${esc(item.label)}</span><div class="stats-track" aria-hidden="true"><i class="${item.priority ? `priority-${item.priority}` : ''}" style="width:${item.count / max * 100}%;${color ? `background:${color}` : ''}"></i></div><strong>${item.count}</strong></div>`;
+      }).join('');
     };
     return wrapModal(`<button class="icon-btn close" data-act="close-modal" aria-label="Close">✕</button>
       <h3>Statistics · ${esc(b.name)}</h3>
+      <p class="stats-intro">A snapshot of active cards on this board. Archived cards are not included.</p>
       <div class="stats-summary">${metrics.map(([label, key, value]) => `<div class="stats-metric"><strong data-stat="${key}">${value}</strong><span>${label}</span></div>`).join('')}</div>
-      <section class="stats-section"><h4>Cards by list</h4>${rows(stats.lists, 'list')}</section>
-      <section class="stats-section"><h4>By priority</h4>${stats.priorities.length ? rows(stats.priorities, 'priority') : '<p class="muted">No cards have a priority set.</p>'}</section>
-      <div class="actions"><button class="btn primary" data-act="close-modal">Close</button></div>`);
+      <div class="stats-grid">
+        <section class="stats-section"><h4>Cards by list</h4>${stats.lists.length ? rows(stats.lists, 'list') : '<p class="muted">No lists yet.</p>'}</section>
+        <section class="stats-section"><h4>By due date</h4><p>Completed cards are counted separately.</p>${rows(stats.due, 'due')}</section>
+        <section class="stats-section"><h4>By label</h4><p>Cards with multiple labels are counted for each label.</p>${rows(stats.labels, 'label')}</section>
+        <section class="stats-section"><h4>By priority</h4>${rows(stats.priorities, 'priority')}</section>
+      </div>
+      <div class="actions"><button class="btn primary" data-act="close-modal">Close</button></div>`, 'statistics-modal');
   }
 
   function boardMenuModal(b, m) {
