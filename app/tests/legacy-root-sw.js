@@ -3,7 +3,7 @@ self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     const response = await fetch('/app/index.html');
-    const html = (await response.text()).replaceAll('v=27', 'v=23');
+    const html = (await response.text()).replace(/v=\d+/g, 'v=23');
     await cache.put('/index.html', new Response(html, { headers: { 'Content-Type': 'text/html' } }));
     await self.skipWaiting();
   })());

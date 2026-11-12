@@ -362,6 +362,39 @@ test('initialization rollback can retry after an interrupted transaction', async
   await expect(page.locator('.board-tile').first()).toBeVisible();
   expect(await db(page, store => store.db.cards.count())).toBe(5);
 });
+test('a cached previous release detects the deployed update on startup and preserves data offline', async ({ page, context }) => {
+  await prepareDatabase(page, fixture(4));
+  await page.goto('/app/tests/blank');
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.register('/app/tests/previous-sw.js', { scope: '/app/' });
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) await new Promise(resolve => navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true }));
+  });
+  await page.goto('/app/#/b/board0');
+  await expect(page.locator('.board-title')).toHaveValue('Tablero 0');
+  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '27'))).toBe(true);
+  await expect(page.locator('.update-notice')).toBeVisible();
+  await page.locator('.card').filter({ hasText: 'Tarea 0' }).click();
+  await page.getByLabel('Card title', { exact: true }).fill('Saved before updating');
+  await Promise.all([
+    page.waitForEvent('load'),
+    page.getByRole('button', { name: 'Activate update and reload' }).click()
+  ]);
+  await expect(page.locator('.update-notice')).toHaveCount(0);
+  await expect(page.locator('.product-version')).toHaveText('Kanbaya v1.1.0');
+  await expect(page.locator('.card').filter({ hasText: 'Saved before updating' })).toBeVisible();
+  expect(await db(page, store => store.db.cards.count())).toBe(4);
+  const cachesAfterUpdate = await page.evaluate(() => caches.keys());
+  expect(cachesAfterUpdate).toContain('kanbaya-pwa-v28');
+  expect(cachesAfterUpdate).not.toContain('kanbaya-pwa-v27');
+  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '28'))).toBe(true);
+
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.locator('.product-version')).toHaveText('Kanbaya v1.1.0');
+  await expect(page.locator('.card').filter({ hasText: 'Saved before updating' })).toBeVisible();
+  expect(await db(page, store => store.db.cards.count())).toBe(4);
+});
 test('an installed legacy worker cannot mix old app code with the new shell', async ({ page }) => {
   await prepareDatabase(page, { version: 2, theme: 'auto', boards: [], templates: [] });
   await page.goto('/app/tests/blank');
