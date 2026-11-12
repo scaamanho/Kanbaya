@@ -299,11 +299,11 @@ test('Undo cannot reintroduce cards beyond a lowered WIP limit', async ({ page }
   await expect(page.locator('.storage-error')).toHaveCount(0);
 });
 
-test('lane options survive JSON export/import and the full menu fits mobile height', async ({ page }) => {
+test('lane options survive backup export/import and the full menu fits mobile height', async ({ page }) => {
   await seed(page);
   await setWip(page, 8);
   await menu(page, 'Collapse list');
-  const json = await db(page, async store => JSON.parse(await (await store.exportBackup(['board0'])).blob.text()));
+  const json = await db(page, async store => (await store.parseBackup((await store.exportBackup(['board0'])).blob)).data);
   expect(json.boards[0].lists[0]).toMatchObject({ collapsed: true, wipLimit: 8 });
   const invalid = structuredClone(json);
   invalid.boards[0].lists[0].wipLimit = -1;

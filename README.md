@@ -122,13 +122,13 @@ When opening `app/` on the same origin after using version 23 at the repository 
 
 When changing production resources, update the version in `app/scripts/boot.js`, `app/sw.js`, their precache entries, and the versioned references in `app/index.html` together. Do not change a published schema under the same version number: add a new Dexie version and its migration.
 
-Product **1.1.0**, including Google Drive backups, uses coordinated asset/cache version **30**, so earlier installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database migration or reinstall is needed for this release.
+Product **1.1.0**, including Google Drive backups, uses coordinated asset/cache version **31**, so earlier installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database migration or reinstall is needed for this release.
 
 ## Backups and recovery
 
 Data belongs to the **browser origin**; changing the domain, port, profile, or browser does not move the database. There is no cross-device synchronization. IndexedDB and persistent storage requests do not guarantee protection against profile deletion, quotas, private browsing, or browser eviction.
 
-The application interface is in English. Regularly use **Data > Export all boards (backup)**. Export includes offscreen records. Backups without attachments use version 2 JSON. Backups containing attachments use a `.kanbaya` binary file: the eight-byte ASCII signature `KANBAYA4`, a four-byte little-endian JSON header length, the UTF-8 version 4 JSON header (including ordered attachment metadata in `images`), and the concatenated stored blobs (WebP/PNG/JPEG or gzip). There is no base64 conversion. Keep the whole file: both the JSON metadata and binary bytes are needed to restore attachments.
+The application interface is in English. Regularly use **Data > Export all boards (backup)**. Export includes offscreen records. All complete backups, local and Google Drive, use the same `.kanbaya` binary format, whether or not they contain attachments: the eight-byte ASCII signature `KANBAYA4`, a four-byte little-endian JSON header length, the UTF-8 version 4 JSON header (including ordered attachment metadata in `images`), and the concatenated stored blobs (WebP/PNG/JPEG or gzip). There is no base64 conversion. Keep the whole file: both the JSON metadata and binary bytes are needed to restore attachments.
 
 On failure, writes are blocked and recovery and reload options are offered:
 

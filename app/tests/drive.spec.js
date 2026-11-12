@@ -69,7 +69,7 @@ async function counts(page) {
 }
 
 for (const withAttachment of [false, true]) {
-  test(`Drive saves and imports exact ${withAttachment ? 'binary attachment' : 'JSON'} backups without replacing local boards`, async ({ page }) => {
+  test(`Drive saves and imports .kanbaya backups ${withAttachment ? 'with' : 'without'} attachments without replacing local boards`, async ({ page }) => {
     const mock = await mockDrive(page);
     await seed(page, fixture(4));
     if (withAttachment) {
@@ -100,9 +100,11 @@ for (const withAttachment of [false, true]) {
     expect(mock.calls.every(call => call.authorization === 'Bearer drive-test-token')).toBe(true);
     const metadata = JSON.parse(mock.calls.find(call => call.method === 'POST' && call.url.includes('uploadType=resumable')).body.toString());
     expect(metadata.parents).toEqual(['backup-folder']);
-    expect(metadata.name).toMatch(withAttachment ? /\.kanbaya$/ : /\.json$/);
-    if (withAttachment) expect(mock.uploaded().subarray(0, 8).toString()).toBe('KANBAYA4');
-    else expect(JSON.parse(mock.uploaded()).boards).toHaveLength(2);
+    expect(metadata.name).toMatch(/\.kanbaya$/);
+    expect(mock.uploaded().subarray(0, 8).toString()).toBe('KANBAYA4');
+    const data = JSON.parse(mock.uploaded().subarray(12, 12 + mock.uploaded().readUInt32LE(8)).toString());
+    expect(data.boards).toHaveLength(2);
+    expect(data.images).toHaveLength(withAttachment ? 1 : 0);
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     dialog = await openDrive(page, 'import');
     await dialog.getByLabel('Backup', { exact: true }).selectOption('saved-backup');
@@ -129,7 +131,7 @@ for (const withAttachment of [false, true]) {
 }
 
 for (const withAttachment of [false, true]) {
-  test(`Drive saves only the selected board as a new ${withAttachment ? 'binary attachment' : 'JSON'} backup and restores it independently`, async ({ page }) => {
+  test(`Drive saves only the selected board as a .kanbaya backup ${withAttachment ? 'with' : 'without'} attachments and restores it independently`, async ({ page }) => {
     const mock = await mockDrive(page);
     await seed(page, fixture(140));
     if (withAttachment) for (const index of [0, 1]) {
@@ -159,15 +161,17 @@ for (const withAttachment of [false, true]) {
     for (const call of uploads) {
       const { name } = JSON.parse(call.body.toString());
       expect(name).toMatch(/^kanbaya-Tablero_0-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\./);
-      expect(name.endsWith(withAttachment ? '.kanbaya' : '.json')).toBe(true);
+      expect(name.endsWith('.kanbaya')).toBe(true);
     }
     const bytes = mock.uploaded();
-    const data = JSON.parse(withAttachment ? bytes.subarray(12, 12 + bytes.readUInt32LE(8)).toString() : bytes.toString());
+    expect(bytes.subarray(0, 8).toString()).toBe('KANBAYA4');
+    const data = JSON.parse(bytes.subarray(12, 12 + bytes.readUInt32LE(8)).toString());
     expect(data.boards.map(board => board.id)).toEqual(['board0']);
     expect(data.templates).toBeUndefined();
     const cards = data.boards[0].lists.flatMap(list => list.cards);
     expect(cards).toHaveLength(70);
     expect(cards.find(card => card.id === 'card138').desc).toBe('aguja-remota');
+    expect(data.images).toHaveLength(withAttachment ? 1 : 0);
     if (withAttachment) {
       expect(data.images).toHaveLength(1);
       expect(data.images[0]).toMatchObject({ boardId: 'board0', cardId: 'card0', name: 'board0.bin' });

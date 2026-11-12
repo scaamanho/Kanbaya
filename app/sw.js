@@ -1,12 +1,12 @@
 /* Service worker: la app funciona sin conexión.
    Estrategia: recursos versionados y activación coordinada.
    Si cambias archivos, sube el número de versión de CACHE. */
-const VERSION = '30';
+const VERSION = '31';
 const CACHE = 'kanbaya-pwa-v' + VERSION;
 const ASSETS = [
-  './', 'index.html', 'css/styles.css?v=30', 'scripts/boot.js?v=30', 'scripts/app.js?v=30',
-  'scripts/storage.js?v=30', 'scripts/virtual.js?v=30', 'scripts/drive.js?v=30', 'vendor/dexie.min.js?v=30',
-  'vendor/marked.umd.js?v=30', 'vendor/purify.min.js?v=30', 'manifest.webmanifest',
+  './', 'index.html', 'css/styles.css?v=31', 'scripts/boot.js?v=31', 'scripts/app.js?v=31',
+  'scripts/storage.js?v=31', 'scripts/virtual.js?v=31', 'scripts/drive.js?v=31', 'vendor/dexie.min.js?v=31',
+  'vendor/marked.umd.js?v=31', 'vendor/purify.min.js?v=31', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'
 ];
 

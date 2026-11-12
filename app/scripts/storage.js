@@ -287,7 +287,6 @@
       }));
       if (!includeTemplates) delete state.templates;
       const data = { app: 'kanbaya', ...state, exportedAt: new Date().toISOString() };
-      if (!images.length) return { extension: 'json', blob: new Blob([JSON.stringify(data)], { type: 'application/json' }) };
       // Binary envelope: magic, little-endian JSON header length, header, then stored blobs.
       const header = new TextEncoder().encode(JSON.stringify({
         ...data, version: 4, images: images.map(({ blob, ...metadata }) => metadata)

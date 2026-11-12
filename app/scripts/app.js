@@ -126,7 +126,7 @@
     c3.labels = [b.labels[0].id];
     const c4 = mkCard('Your data is saved only in this browser');
     c4.priority = WELCOME_PRIORITIES[c4.title];
-    c4.desc = 'Use the ⋯ menu in the top corner to export a JSON backup.';
+    c4.desc = 'Use the ⋯ menu in the top corner to export a backup.';
     c4.labels = [b.labels[3].id];
     const c5 = mkCard('Install the app (browser menu → Install)');
     c5.priority = WELCOME_PRIORITIES[c5.title];
