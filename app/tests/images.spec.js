@@ -33,6 +33,14 @@ async function attach(page, files, count) {
   await expect.poll(() => page.locator('.image-attachment img').first().evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
 }
 
+async function addFromWeb(page, url) {
+  await page.getByRole('button', { name: 'Add from web' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add attachment from web' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('Attachment URL').fill(url);
+  await dialog.getByRole('button', { name: 'Add attachment' }).click();
+}
+
 async function db(page, fn) {
   return page.evaluate(async source => {
     const store = new KanbayaStore();
@@ -41,6 +49,31 @@ async function db(page, fn) {
     finally { store.db.close(); }
   }, fn.toString());
 }
+
+test('attachment source buttons are aligned and open device and web import flows', async ({ page }) => {
+  await seed(page);
+  const device = page.getByRole('button', { name: 'Add from device' });
+  const web = page.getByRole('button', { name: 'Add from web' });
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 800 });
+    const bounds = await Promise.all([device, web].map(button => button.evaluate(el => {
+      const { x, y, width } = el.getBoundingClientRect();
+      return { x, y, width };
+    })));
+    expect(Math.abs(bounds[0].y - bounds[1].y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(bounds[0].width - bounds[1].width)).toBeLessThanOrEqual(1);
+  }
+  const chooserPromise = page.waitForEvent('filechooser');
+  await device.click();
+  await (await chooserPromise).setFiles(await imageFile(page));
+  await expect(page.locator('.image-attachment')).toHaveCount(1);
+  await web.click();
+  const dialog = page.getByRole('dialog', { name: 'Add attachment from web' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('CORS');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toHaveCount(0);
+});
 
 test('compresses local images into separate Blobs, selects covers and persists offline', async ({ page, context }) => {
   await seed(page);
@@ -92,15 +125,12 @@ test('downloads URL images and rejects network, protocol and invalid file errors
     if (route.request().url().endsWith('missing.png')) return route.fulfill({ status: 404, headers: { 'Access-Control-Allow-Origin': '*' } });
     return route.fulfill({ contentType: 'image/png', body: file.buffer, headers: { 'Access-Control-Allow-Origin': '*' } });
   });
-  await page.getByLabel('Attachment URL', { exact: true }).fill('https://images.example.test/remote.png');
-  await page.getByRole('button', { name: 'Add from URL' }).click();
+  await addFromWeb(page, 'https://images.example.test/remote.png');
   await expect(page.locator('.image-attachment')).toContainText('remote.png');
   await expect.poll(() => page.locator('.modal-cover').evaluate(img => img.naturalWidth)).toBe(1600);
-  await page.getByLabel('Attachment URL', { exact: true }).fill('https://images.example.test/missing.png');
-  await page.getByRole('button', { name: 'Add from URL' }).click();
+  await addFromWeb(page, 'https://images.example.test/missing.png');
   await expect(page.locator('.toast')).toContainText('HTTP 404');
-  await page.getByLabel('Attachment URL', { exact: true }).fill('javascript:alert(1)');
-  await page.getByRole('button', { name: 'Add from URL' }).click();
+  await addFromWeb(page, 'javascript:alert(1)');
   await expect(page.locator('.toast')).toContainText('HTTP or HTTPS');
   await page.getByLabel('Add attachments from device').setInputFiles({ name: 'broken.png', mimeType: 'image/png', buffer: Buffer.from('not an image') });
   await expect(page.locator('.toast')).toContainText('damaged');
@@ -371,8 +401,7 @@ test('URL files are compressed and only images appear in cover and description s
     contentType: 'application/pdf', body: Buffer.from('%PDF-example\n'.repeat(200)),
     headers: { 'Access-Control-Allow-Origin': '*' }
   }));
-  await page.getByLabel('Attachment URL', { exact: true }).fill('https://files.example.test/document.pdf');
-  await page.getByRole('button', { name: 'Add from URL' }).click();
+  await addFromWeb(page, 'https://files.example.test/document.pdf');
   await expect(page.locator('.image-attachment')).toHaveCount(1);
   await attach(page, [await imageFile(page, 'first.png'), await imageFile(page, 'second.png')], 3);
   const card = await db(page, store => store.db.cards.get(['board0', 'card0']));

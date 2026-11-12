@@ -24,7 +24,7 @@ Serve the repository directory over HTTPS, or localhost for development. For exa
 node app\tests\server.js
 ```
 
-Open `http://127.0.0.1:8765/` for the product website or `http://127.0.0.1:8765/app/` for the application. This server is for development only. For production, publish the root `index.html`, `site.css`, `site.js`, and `assets/`, together with `app/index.html`, `app/manifest.webmanifest`, `app/sw.js`, and the `app/scripts/`, `app/css/`, `app/vendor/`, and `app/icons/` directories under the same `app/` path. Do not publish `node_modules/`, `tests/`, or test reports. Opening the HTML using `file:` does not provide the expected PWA functionality.
+When the server starts, it prints a clickable link to the application: `http://127.0.0.1:8765/app/`. Open `http://127.0.0.1:8765/` for the product website. This server is for development only. For production, publish the root `index.html`, `site.css`, `site.js`, and `assets/`, together with `app/index.html`, `app/manifest.webmanifest`, `app/sw.js`, and the `app/scripts/`, `app/css/`, `app/vendor/`, and `app/icons/` directories under the same `app/` path. Do not publish `node_modules/`, `tests/`, or test reports. Opening the HTML using `file:` does not provide the expected PWA functionality.
 
 The website's **Install Kanbaya** button opens the application with an installation banner. Its **Install** button opens the native prompt when the browser provides one; otherwise it explains how to use the browser's install option. Availability depends on browser, device, and install status.
 
@@ -82,7 +82,9 @@ The calendar queries the 42-day range once and groups the results. Days with man
 
 ## Card attachments and description images
 
-The **Repeat task** control is temporarily hidden. Existing recurrence settings remain stored and continue to apply when completing a due date.
+The card sidebar places **Priority** above **Status & due date**, collapsed by default and styled like **Card appearance**. Its single **Mark as complete** checkbox completes or reopens the card, with or without a due date; completion also resolves its deadline. The collapsed heading shows **Completed** for finished cards. The optional date can be edited or removed without changing completion, and the section stays expanded while editing. Checklists remain independent.
+
+The **Repeat task** control is temporarily hidden. Existing recurrence settings remain stored: completing a recurring card with a due date advances to its next date and keeps the card pending.
 
 Open a card and use **Attachments > From your device** (multiple files supported, any file type) or **Add from URL**. URL attachments are downloaded once; the server must allow CORS and HTTPS pages cannot fetch insecure HTTP resources. Downloads time out after 30 seconds. Once saved, attachments are available offline.
 
@@ -100,7 +102,7 @@ Attachment additions, edits, and deletions participate in transactions and Undo.
 
 ## Markdown descriptions
 
-Opening a card shows its rendered description, not a textarea and a duplicated preview. **Edit description** opens a Markdown source editor with a compact, grouped icon toolbar (accessible labels and tooltips), **Preview / Write**, **Save description**, **Cancel**, and a local **Formatting guide**. Toolbar controls wrap on narrow screens and share the application's theme colors.
+Opening a card shows its rendered description, not a textarea and a duplicated preview. Click the description (including its empty placeholder) or **Edit description** to open a Markdown source editor with a compact, grouped icon toolbar (accessible labels and tooltips), **Preview / Write**, **Save description**, **Cancel**, and a local **Formatting guide**. Clicking the preview also returns to writing without losing the draft. Links and read-only task checkboxes retain their normal behavior. Toolbar controls wrap on narrow screens and share the application's theme colors.
 
 The renderer supports CommonMark and GitHub-flavored Markdown: headings, paragraphs, emphasis, bold, strikethrough, links/autolinks, inline and reference images, nested ordered/unordered lists, read-only task checkboxes, blockquotes, inline/fenced code, horizontal rules, tables, escapes and hard line breaks. Language names on fenced code blocks are preserved; syntax highlighting, math, and nonstandard Markdown extensions are not included. Raw HTML is displayed as literal text rather than executed, and the resulting HTML is sanitized with DOMPurify. Links only allow HTTP, HTTPS and mailto destinations and open with `noopener noreferrer`. External Markdown images allow HTTP/HTTPS, load lazily without a referrer, and require a network connection; attached images remain local and work offline.
 
@@ -175,4 +177,4 @@ tasklist /FI "PID eq 1234"
 taskkill /PID 1234 /F
 
 
-<a href="https://www.buymeacoffee.com/scaamanho" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+<a href="https://www.buymeacoffee.com/scaamanho" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 30px !important;width: 100px !important;" ></a>

@@ -222,12 +222,35 @@ test('export includes unloaded details and import keeps the JSON contract', asyn
   await expect.poll(() => db(page, store => store.db.cards.count())).toBe(400);
   expect(await db(page, store => store.db.templates.count())).toBe(2);
 });
+test('card completion drives deadline filters, statistics and calendar status', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-11-12T12:00:00'));
+  const data = fixture(4);
+  const cards = data.boards[0].lists[0].cards;
+  cards[0].completed = true;
+  cards[1].dueDone = true;
+  await seed(page, data);
+  await expect(page.locator('.board-title')).toHaveValue('Tablero 0');
+  const result = await db(page, async store => {
+    const board = (await store.readState()).boards.find(board => board.id === 'board0');
+    const keys = await store.listKeys(board, board.lists[0], { status: [], due: ['overdue'], labels: [] }, '');
+    const stats = await store.statistics(board);
+    return { ids: keys.map(key => key.id), overdue: stats.overdue, completed: stats.completed };
+  });
+  expect(result).toEqual({ ids: ['card2'], overdue: 1, completed: 1 });
+  await page.locator('[data-act="toggle-view"]').click();
+  await expect(page.locator('.cal-event').filter({ hasText: 'Tarea 0' })).toHaveClass(/done/);
+  await expect(page.locator('.cal-event').filter({ hasText: 'Tarea 2' })).not.toHaveClass(/done/);
+});
 test('completed recurrence advances and label renaming updates offscreen search', async ({ page }) => {
   await seed(page, fixture(200));
   await page.locator('.card').first().click();
-  await page.locator('[data-f="dueDone"]').check();
+  await page.locator('.due-date-section summary').click();
+  await page.getByLabel('Mark as complete', { exact: true }).check();
   await expect(page.locator('[data-f="due"]')).toHaveValue('2026-11-12');
-  await expect(page.locator('[data-f="dueDone"]')).not.toBeChecked();
+  await expect(page.getByLabel('Mark as complete', { exact: true })).not.toBeChecked();
+  const recurring = await db(page, store => store.db.cards.get(['board0', 'card0']));
+  expect(recurring.completed).toBe(false);
+  expect(recurring.dueDone).toBe(false);
   await page.locator('[data-act="edit-labels"]').click();
   await page.locator('[data-f="label-name"]').fill('Nombre totalmente nuevo');
   await expect.poll(() => db(page, store => store.db.boards.get('board0').then(b => b.labels[0].name))).toBe('Nombre totalmente nuevo');

@@ -21,6 +21,52 @@ async function savedDescription(page) {
 
 test.afterEach(({ page }) => { expect(page.descriptionErrors || []).toEqual([]); });
 
+test('clicking the saved description or empty placeholder opens a focused editor', async ({ page }) => {
+  await seed(page);
+  const textarea = page.getByRole('textbox', { name: 'Description', exact: true });
+  await page.locator('.description-view p').click();
+  await expect(textarea).toBeFocused();
+  await expect(textarea).toHaveValue('Descripci\u00f3n 0');
+  await textarea.fill('');
+  await page.getByRole('button', { name: 'Save description', exact: true }).click();
+  await page.getByText('Add a more detailed description...', { exact: true }).click();
+  await expect(textarea).toBeFocused();
+  await expect(textarea).toHaveValue('');
+});
+
+test('clicking preview returns to a focused source editor without saving the draft', async ({ page }) => {
+  await seed(page);
+  await page.locator('.description-view').click();
+  const textarea = page.getByRole('textbox', { name: 'Description', exact: true });
+  await textarea.fill('**Unsaved preview**');
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await page.locator('.description-preview strong').click();
+  await expect(textarea).toBeFocused();
+  await expect(textarea).toHaveValue('**Unsaved preview**');
+  expect(await savedDescription(page)).toBe('Descripci\u00f3n 0');
+});
+
+test('description links navigate without activating editing in saved view or preview', async ({ page, context }) => {
+  await seed(page);
+  await context.route('https://description.example.test/', route => route.fulfill({ contentType: 'text/html', body: '<title>Link destination</title>' }));
+  await page.locator('.description-view').click();
+  await page.getByRole('textbox', { name: 'Description', exact: true }).fill('[Open **link**](https://description.example.test/)');
+  await page.getByRole('button', { name: 'Save description', exact: true }).click();
+  for (const selector of ['.description-view', '.description-preview']) {
+    if (selector === '.description-preview') {
+      await page.getByRole('button', { name: 'Edit description', exact: true }).click();
+      await page.getByRole('button', { name: 'Preview', exact: true }).click();
+    }
+    const popupPromise = context.waitForEvent('page');
+    await page.locator(`${selector} a strong`).click();
+    const popup = await popupPromise;
+    await expect(popup).toHaveURL('https://description.example.test/');
+    await popup.close();
+    await expect(page.locator(selector)).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Description', exact: true })).not.toBeVisible();
+  }
+});
+
 test('shows only rendered content, explicitly saves and cancels without writing draft text', async ({ page }) => {
   await seed(page);
   await expect(page.locator('.description-view')).toHaveText('Descripci\u00f3n 0');

@@ -2,6 +2,8 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..', '..');
+const host = '127.0.0.1';
+const port = 8765;
 http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const requestPath = url.pathname.startsWith('/project/') ? url.pathname.slice('/project'.length) : url.pathname;
@@ -18,4 +20,6 @@ http.createServer((req, res) => {
     res.setHeader('Service-Worker-Allowed', '/');
     res.end(data);
   });
-}).listen(8765, '127.0.0.1');
+}).listen(port, host, () => {
+  console.log(`Kanbaya is available at http://${host}:${port}/app/`);
+});

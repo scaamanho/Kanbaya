@@ -238,10 +238,11 @@ button { cursor: pointer; }
 .card-title { overflow-wrap: anywhere; white-space: pre-wrap; }
 .card-cover { display: block; width: calc(100% + 20px); height: 140px; margin: -8px -10px 8px; border-radius: 8px 8px 0 0; object-fit: cover; background: var(--hover); }
 .modal-cover { display: block; width: calc(100% + 48px); height: 200px; margin: -20px -24px 20px; border-radius: 12px 12px 0 0; object-fit: contain; background: var(--hover); }
-.image-file-label { display: grid; gap: 6px; }
-.image-files { max-width: 100%; }
-.image-url-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.image-url-row input { flex: 1; min-width: 120px; }
+.image-source-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.image-source-actions .btn { width: 100%; min-width: 0; }
+.image-files { display: none; }
+.image-source-note { margin: 10px 0 0; font-size: 12px; line-height: 1.45; }
+.image-url-note { margin: 12px 0 0; padding: 10px 12px; border-radius: 6px; background: var(--hover); font-size: 13px; line-height: 1.45; }
 .image-status:empty { display: none; }
 .image-attachments { display: grid; gap: 12px; }
 .image-attachment { display: flex; align-items: center; gap: 12px; }
@@ -393,9 +394,9 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none 
   .stats-metric:last-child { grid-column: 1 / -1; }
   .stats-row { grid-template-columns: minmax(72px, 96px) minmax(0, 1fr) 24px; gap: 6px; }
 }
-.appearance-section { margin: 0 0 16px; }
-.appearance-section summary { margin: 18px 0 8px; color: var(--muted); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; cursor: pointer; }
-.appearance-section[open] summary { margin-bottom: 10px; }
+.modal-section { margin: 0 0 16px; }
+.modal-section summary { margin: 18px 0 8px; color: var(--muted); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; cursor: pointer; }
+.modal-section[open] summary { margin-bottom: 10px; }
 .modal .close { position: absolute; top: 10px; right: 10px; }
 .overlay.drawer { justify-content: flex-end; padding: 0; }
 .overlay.drawer .modal { width: min(340px, 100%); border-radius: 0; min-height: 100%; margin: 0; }
@@ -435,14 +436,14 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none 
 .field, .modal textarea, .modal select, .modal input[type="date"], .modal input[type="text"] {
   width: 100%; background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
 }
-.card-properties { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: end; }
-.card-properties > label { color: var(--muted); }
-.card-properties h4 { margin-top: 0; }
-.card-properties .row { flex-wrap: wrap; }
-.due-remove { flex: none; }
-@media (max-width: 520px) { .card-properties { grid-template-columns: 1fr; } }
+.m-side { min-width: 0; }
+.card-priority { display: block; color: var(--muted); }
+.completion-status { display: block; margin: 6px 0 0 14px; color: var(--text); font-size: 12px; font-weight: 400; text-transform: none; letter-spacing: normal; }
+.due-date-label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 12px; }
+.due-date-actions { margin-top: 10px; }
 .modal textarea { resize: vertical; min-height: 110px; }
 .modal input[type="date"] { width: auto; }
+.due-date-section input[type="date"] { width: 100%; min-width: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
   border: 0; border-radius: 4px; padding: 6px 12px; min-width: 48px; min-height: 30px; background: var(--c);

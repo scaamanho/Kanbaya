@@ -196,7 +196,7 @@
         let overdue = 0, withDue = 0, completed = 0, checkCount = 0, checkDone = 0;
         for (const card of cards) {
           listCounts.set(card.listId, (listCounts.get(card.listId) || 0) + 1);
-          if (card.due) { withDue++; if (!card.dueDone && !card.completed && card.due < todayKey) overdue++; }
+          if (card.due) { withDue++; if (!card.completed && card.due < todayKey) overdue++; }
           if (card.completed) completed++;
           if (priorityCounts.has(card.priority)) priorityCounts.set(card.priority, priorityCounts.get(card.priority) + 1);
           checkCount += card.checkCount || 0;
@@ -511,7 +511,7 @@
         if (filters.labels.length && !filters.labels.some(id => id === 'none' ? !c.labels.length : c.labels.includes(id))) return false;
         if (filters.due.length && !filters.due.some(s => {
           if (s === 'none') return !c.due;
-          if (!c.due || c.dueDone) return false;
+          if (!c.due || c.completed) return false;
           if (s === 'overdue') return c.due < now;
           if (s === 'tomorrow') return c.due === days(1);
           return c.due > now && c.due <= days(s === 'week' ? 7 : 30);

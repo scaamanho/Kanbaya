@@ -17,14 +17,21 @@ test('preserves legacy card details, search and calendar contracts', async ({ pa
   await page.locator('[data-act="toggle-view"]').click();
   await expect(page.locator('.cal-day')).toHaveCount(42);
 });
-test('due date removal fits the card editor on desktop and mobile', async ({ page }) => {
+test('status and due date collapse below priority and fit desktop and mobile', async ({ page }) => {
   await seed(page, fixture(20));
   await page.locator('.card').filter({ hasText: 'Tarea 0' }).click();
+  const section = page.locator('.m-side .due-date-section');
+  const due = page.getByLabel('Due date', { exact: true });
+  await expect(section).toBeVisible();
+  await expect(due).toBeHidden();
+  await expect(page.locator('.card-priority + .due-date-section')).toHaveCount(1);
+  await section.locator('summary').click();
+  await expect(due).toBeVisible();
   for (const width of [1280, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
-    const measurements = await page.locator('.card-properties .row').evaluate(row => {
+    const measurements = await section.evaluate(row => {
       const rect = row.getBoundingClientRect();
-      const items = [...row.children].map(el => el.getBoundingClientRect());
+      const items = [...row.querySelectorAll('input[type="date"], .check, button')].map(el => el.getBoundingClientRect());
       return { overflow: row.scrollWidth - row.clientWidth, right: rect.right, viewport: innerWidth,
         overlap: items.some((a, i) => items.slice(i + 1).some(b => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top)) };
     });
@@ -32,10 +39,64 @@ test('due date removal fits the card editor on desktop and mobile', async ({ pag
     expect(measurements.right).toBeLessThanOrEqual(measurements.viewport);
     expect(measurements.overlap).toBe(false);
   }
+  await due.fill('2026-12-01');
+  await expect(due).toBeVisible();
+  await expect(due).toHaveValue('2026-12-01');
+  await section.locator('summary').click();
+  await page.getByLabel('Priority').selectOption('high');
+  await expect(due).toBeHidden();
+  await section.locator('summary').click();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
-  await expect(page.getByLabel('Due date', { exact: true })).toHaveValue('');
+  await expect(due).toBeVisible();
+  await expect(due).toHaveValue('');
+  await expect(section.getByLabel('Mark as complete', { exact: true })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
 });
+for (const initialDue of ['', '2000-01-01']) {
+  test(`one completion control persists card and deadline status ${initialDue ? 'with' : 'without'} a date`, async ({ page }) => {
+    const data = fixture(20);
+    const source = data.boards[0].lists[0].cards[0];
+    source.due = initialDue;
+    source.recurrence = '';
+    source.checklist[0].done = false;
+    await seed(page, data);
+    const card = page.locator('.card').filter({ hasText: 'Tarea 0' });
+    await card.click();
+    const section = page.locator('.due-date-section');
+    const complete = page.getByLabel('Mark as complete', { exact: true });
+    const due = page.getByLabel('Due date', { exact: true });
+    await expect(complete).toHaveCount(1);
+    await expect(page.locator('[data-f="dueDone"]')).toHaveCount(0);
+    await section.locator('summary').click();
+    await complete.check();
+    await expect(complete).toBeChecked();
+    await expect(complete).toBeVisible();
+    await expect(page.locator('[data-f="check-done"]')).not.toBeChecked();
+    await section.locator('summary').click();
+    await expect(section.locator('summary')).toContainText('Completed');
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(card).toHaveClass(/is-completed/);
+    if (initialDue) await expect(card.locator('.badge.ok')).toBeVisible();
+    await page.reload();
+    await card.click();
+    await expect(section.locator('summary')).toContainText('Completed');
+    await section.locator('summary').click();
+    await expect(complete).toBeChecked();
+    await due.fill('2000-01-02');
+    await expect(complete).toBeChecked();
+    await complete.uncheck();
+    await expect(section.locator('summary')).not.toContainText('Completed');
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(card).not.toHaveClass(/is-completed/);
+    await expect(card.locator('.badge.overdue')).toBeVisible();
+    await card.click();
+    await section.locator('summary').click();
+    await complete.check();
+    await page.getByRole('button', { name: 'Remove', exact: true }).click();
+    await expect(complete).toBeChecked();
+    await expect(due).toHaveValue('');
+  });
+}
 test('template name uses a cancellable app dialog and accepts Enter', async ({ page }) => {
   await seed(page, fixture(20));
   await page.locator('.card').filter({ hasText: 'Tarea 0' }).click();
@@ -255,6 +316,7 @@ test('uses English throughout the interface and for new default content', async 
   await page.locator('.card').filter({ hasText: 'Welcome: drag this card to another list' }).click();
   await expect(page.getByLabel('Card title', { exact: true })).toHaveValue('👋 Welcome: drag this card to another list');
   await expect(page.locator('.description-view')).toContainText('You can drag cards');
+  await page.locator('.due-date-section summary').click();
   await expect(page.getByLabel('Mark as complete', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Labels', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Personal comments' })).toBeVisible();

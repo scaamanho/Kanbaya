@@ -520,7 +520,7 @@
       ${favorites.length ? `<section class="home-section" data-section="favorites"><h2>★ Favorites</h2><div class="board-grid">${tiles(favorites)}</div></section>` : ''}
       <section class="home-section" data-section="all-boards"><h2>All boards</h2><div class="board-grid">${tiles(boards)}<button class="board-tile new" data-act="new-board">＋ Create board</button></div>
       ${!boards.length ? `<p class="empty">${emptyMessage}</p>` : ''}</section>
-      <a class="support-link" href="https://www.buymeacoffee.com/scaamanho" target="_blank" rel="noopener noreferrer" aria-label="Buy Me a Coffee"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="150" height="45" style="width:150px;height:45px" ></a>
+      <a class="support-link" href="https://www.buymeacoffee.com/scaamanho" target="_blank" rel="noopener noreferrer" aria-label="Buy Me a Coffee"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="100" height="30" style="width:100px;height:30px" ></a>
       </main>`;
   }
 
@@ -543,7 +543,7 @@
     const hasDesc = c._summary ? c._hasDesc : !!c.desc.trim();
     let due = '';
     if (c.due) {
-      const cls = c.dueDone ? 'ok' : c.due < todayStr() ? 'overdue' : c.due === todayStr() ? 'soon' : '';
+      const cls = c.completed ? 'ok' : c.due < todayStr() ? 'overdue' : c.due === todayStr() ? 'soon' : '';
       due = `<span class="badge ${cls}" title="Due date">⏰ ${fmtDate(c.due)}</span>`;
     }
     return `<article class="card ${c.completed ? 'is-completed' : ''}" ${themeStyle(c.theme, 'card-theme', 'card-theme-text')} data-act="open-card" data-id="${c.id}" data-virtual-id="${c.id}" tabindex="0" role="button">
@@ -734,7 +734,7 @@
     if (days.length) {
       const keys = await store.listKeys(b, null, filters, query, false, [days[0].dataset.virtualDay, days.at(-1).dataset.virtualDay]);
       await Promise.all(days.map(host => make(host, keys.filter(k => k.due === host.dataset.virtualDay), 'day:' + host.dataset.virtualDay,
-        c => `<button class="cal-event ${c.dueDone ? 'done' : ''}" data-act="open-card" data-id="${c.id}" data-virtual-id="${c.id}" title="${esc(b.lists.find(l => l.id === c.listId)?.name)}">${esc(c.title)}</button>`, 32)));
+        c => `<button class="cal-event ${c.completed ? 'done' : ''}" data-act="open-card" data-id="${c.id}" data-virtual-id="${c.id}" title="${esc(b.lists.find(l => l.id === c.listId)?.name)}">${esc(c.title)}</button>`, 32)));
     }
     const archive = $('.archive-window:not(.templates-window)');
     if (archive) {
@@ -799,7 +799,7 @@
         <div class="description-image-options">${(attachments || []).filter(isImage).map(image => `<button class="btn" data-act="insert-description-image" data-image-id="${esc(image.id)}"><img data-image-id="${esc(image.id)}" alt="" draggable="false"><span>${esc(image.name)}</span></button>`).join('') || '<p class="muted">Upload an image in Attachments first.</p>'}</div>
       </div></div>
       <textarea data-f="desc" placeholder="Write a description using Markdown..." aria-label="Description" ${draft.preview ? 'hidden' : ''}>${esc(draft.text)}</textarea>
-      ${draft.preview ? `<div class="description-preview markdown-body" aria-label="Description preview">${descriptionHTML(card, attachments, draft.text)}</div>` : ''}
+      ${draft.preview ? `<div class="description-preview markdown-body" data-act="preview-description" aria-label="Description preview">${descriptionHTML(card, attachments, draft.text)}</div>` : ''}
     </div>
     <div class="description-actions"><button class="btn primary" data-act="save-description">Save description</button><button class="btn" data-act="cancel-description">Cancel</button>
       <details class="markdown-help"><summary>Formatting guide</summary><p>Markdown supports headings, paragraphs, **bold**, *italic*, ~~strikethrough~~, links, images, lists, task lists, quotes, tables, horizontal rules and fenced code blocks.</p><pre># Heading
@@ -832,10 +832,9 @@ const answer = 42;
         </div>
       </div>
       <p class="muted">In list <strong>${esc(list.name)}</strong></p>
-      <label class="check card-completion"><input type="checkbox" data-f="completed" ${c.completed ? 'checked' : ''}> Mark as complete</label>
       <div class="m-grid">
         <div class="m-main">
-          <details class="appearance-section">
+          <details class="modal-section appearance-section">
             <summary>Card appearance</summary>
             ${themeEditor(c.theme, 'card-theme', c.id, 'reset-card-theme')}
             <label>Cover image<select data-f="cover-image" aria-label="Cover image"><option value="">No cover</option>${(m.images || []).filter(isImage).map(image => `<option value="${esc(image.id)}" ${c.coverImageId === image.id ? 'selected' : ''}>${esc(image.name)}</option>`).join('')}</select></label>
@@ -843,25 +842,20 @@ const answer = 42;
           <h4>Labels</h4>
           <div class="chips">${b.labels.map(l => `<button class="chip ${c.labels.includes(l.id) ? 'on' : ''}" style="--c:${l.color}" data-act="toggle-label" data-lid="${l.id}" aria-pressed="${c.labels.includes(l.id)}">${esc(l.name) || '&nbsp;'}</button>`).join('')}
             <button class="chip add" data-act="edit-labels">✎ Edit</button></div>
-          <div class="card-properties">
-            <label>Priority<select data-f="priority" aria-label="Priority">${PRIORITIES.map(p => `<option value="${p.value}" ${c.priority === p.value ? 'selected' : ''}>${p.label}</option>`).join('')}</select></label>
-            <div><h4>Due date</h4>
-              <div class="row"><input type="date" data-f="due" value="${c.due}" aria-label="Due date">
-                <label class="check"><input type="checkbox" data-f="dueDone" ${c.dueDone ? 'checked' : ''} ${c.due ? '' : 'disabled'}> Complete</label>
-                ${c.due ? '<button class="btn sm due-remove" data-act="clear-due">Remove</button>' : ''}</div>
-            </div>
-          </div>
           <!-- Repeat task is temporarily unavailable; existing recurrence settings remain unchanged.
           <label class="recurrence-row">Repeat task<select data-f="recurrence"><option value="" ${!c.recurrence ? 'selected' : ''}>Does not repeat</option><option value="daily" ${c.recurrence === 'daily' ? 'selected' : ''}>Every day</option><option value="weekly" ${c.recurrence === 'weekly' ? 'selected' : ''}>Every week</option><option value="monthly" ${c.recurrence === 'monthly' ? 'selected' : ''}>Every month</option></select></label> -->
           <section class="description-section" aria-label="Card description">
             <div class="description-heading"><h4>Description</h4>${descriptionDraft?.cardId === c.id && descriptionDraft.boardId === b.id ? '' : '<button class="btn sm" data-act="edit-description">Edit description</button>'}</div>
-            ${descriptionDraft?.cardId === c.id && descriptionDraft.boardId === b.id ? descriptionEditor(c, m.images) : `<div class="description-view markdown-body" aria-label="Description">${c.desc ? descriptionHTML(c, m.images) : '<p class="muted">Add a more detailed description...</p>'}</div>`}
+            ${descriptionDraft?.cardId === c.id && descriptionDraft.boardId === b.id ? descriptionEditor(c, m.images) : `<div class="description-view markdown-body" data-act="edit-description" aria-label="Description">${c.desc ? descriptionHTML(c, m.images) : '<p class="muted">Add a more detailed description...</p>'}</div>`}
           </section>
           <section class="card-images" aria-label="Attachments">
             <h4>Attachments</h4>
-            <label class="image-file-label">From your device<input type="file" class="image-files" multiple aria-label="Add attachments from device"></label>
-            <div class="image-url-row"><input type="url" class="image-url field" placeholder="https://..." aria-label="Attachment URL"><button class="btn" data-act="add-image-url">Add from URL</button></div>
-            <p class="muted">Images are optimized as WebP; other files use lossless gzip and download in their original format. Saved locally. External URLs must allow CORS.</p>
+            <div class="image-source-actions">
+              <button type="button" class="btn" data-act="choose-attachments">Add from device</button>
+              <button type="button" class="btn" data-act="add-image-url">Add from web</button>
+              <input type="file" class="image-files" multiple aria-label="Add attachments from device">
+            </div>
+            <p class="muted image-source-note">Attachments are saved in this browser. Images are optimized; other files keep their original format.</p>
             <p class="image-status" role="status"></p>
             <div class="image-attachments">${(c.imageIds || []).map((id, i) => {
               const image = m.images?.find(image => image.id === id);
@@ -885,6 +879,14 @@ const answer = 42;
           <div class="add-comment"><textarea class="field" maxlength="2000" rows="2" placeholder="Write a note or comment…" aria-label="New comment"></textarea><button class="btn primary" data-act="add-comment">Add comment</button></div>
         </div>
         <aside class="m-side">
+          <label class="card-priority">Priority<select data-f="priority" aria-label="Priority">${PRIORITIES.map(p => `<option value="${p.value}" ${c.priority === p.value ? 'selected' : ''}>${p.label}</option>`).join('')}</select></label>
+          <details class="modal-section due-date-section" ${m.dueOpen ? 'open' : ''}>
+            <summary>Status &amp; due date${c.completed ? '<span class="completion-status">Completed</span>' : ''}</summary>
+            <label class="check card-completion"><input type="checkbox" data-f="completed" ${c.completed ? 'checked' : ''}> Mark as complete</label>
+            <label class="due-date-label" for="card-due-date">Due date (optional)</label>
+            <input id="card-due-date" type="date" data-f="due" value="${c.due}" aria-label="Due date">
+            ${c.due ? '<div class="due-date-actions"><button class="btn sm" data-act="clear-due">Remove</button></div>' : ''}
+          </details>
           <h4>Move to</h4>
           <select data-f="move" aria-label="Move to list">${b.lists.map(l => `<option value="${l.id}" ${l.id === list.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select>
           <h4>Actions</h4>
@@ -987,6 +989,12 @@ const answer = 42;
       <div class="actions"><button class="btn" data-act="close-modal">Cancel</button><button class="btn primary" data-act="move-lane-cards">Move cards</button></div>`, 'narrow');
   }
 
+  $('#modal-root').addEventListener('toggle', e => {
+    if (e.target.isConnected && e.target.matches('.due-date-section') && ui.modal?.type === 'card') {
+      ui.modal.dueOpen = e.target.open;
+    }
+  }, true);
+
   function renderModal() {
     const root = $('#modal-root');
     const prevScroll = $('.overlay', root)?.scrollTop || 0;
@@ -1041,6 +1049,34 @@ const answer = 42;
   }
   const confirmAction = (message, label = 'Delete') => appDialog(message, { confirmLabel: label });
   const promptAction = (message, value, maxLength) => appDialog(message, { confirmLabel: 'Save', value, maxLength });
+
+  function attachmentURLDialog() {
+    return new Promise(resolve => {
+      const previousFocus = document.activeElement;
+      const dialog = document.createElement('dialog');
+      dialog.className = 'modal narrow app-dialog attachment-url-dialog';
+      dialog.setAttribute('aria-labelledby', 'attachment-url-title');
+      dialog.innerHTML = `<form method="dialog">
+        <h3 id="attachment-url-title">Add attachment from web</h3>
+        <label for="attachment-url-input">Attachment URL</label>
+        <input id="attachment-url-input" class="field" type="text" inputmode="url" autocomplete="url" placeholder="https://..." aria-label="Attachment URL">
+        <p class="muted image-url-note">The server must allow cross-origin requests (CORS). The file will be saved in this browser.</p>
+        <div class="actions"><button type="button" class="btn" value="cancel">Cancel</button><button class="btn primary" value="confirm">Add attachment</button></div>
+      </form>`;
+      $('button[value="cancel"]', dialog).addEventListener('click', () => dialog.close());
+      dialog.addEventListener('click', event => event.stopPropagation());
+      dialog.addEventListener('keydown', event => event.stopPropagation());
+      dialog.addEventListener('close', () => {
+        const result = dialog.returnValue === 'confirm' ? $('#attachment-url-input', dialog).value : null;
+        dialog.remove();
+        if (previousFocus?.isConnected && !previousFocus.closest('[inert]')) previousFocus.focus({ preventScroll: true });
+        resolve(result);
+      }, { once: true });
+      document.body.append(dialog);
+      dialog.showModal();
+      $('#attachment-url-input', dialog).focus();
+    });
+  }
 
   /* ---------------- Menús emergentes ---------------- */
   function closeMenu() { menuEl?.remove(); menuEl = null; }
@@ -1301,6 +1337,7 @@ const answer = 42;
       if (!descriptionDraft) return;
       descriptionDraft.preview = !descriptionDraft.preview;
       descriptionDraft.imagePicker = false;
+      if (!descriptionDraft.preview) ui.focus = '[data-f="desc"]';
       render();
     },
     'toggle-description-images'() {
@@ -1390,10 +1427,12 @@ const answer = 42;
       ]);
     },
     async 'add-image-url'() {
-      const input = $('.image-url'), context = ctxCard();
-      if (!input || !context) return;
+      const context = ctxCard();
+      if (!context) return;
+      const value = await attachmentURLDialog();
+      if (value === null) return;
       try {
-        const url = new URL(input.value.trim());
+        const url = new URL(value.trim());
         if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Use an HTTP or HTTPS attachment URL.');
         const status = $('.image-status');
         if (status) status.textContent = 'Downloading attachment...';
@@ -1555,8 +1594,10 @@ const answer = 42;
     let changed = false;
     if (ui.composer && !t.closest('.composer')) { ui.composer = null; changed = true; }
     if (ui.addingList && !t.closest('.add-list')) { ui.addingList = false; changed = true; }
-    const el = t.closest('[data-act]');
+    let el = t.closest('[data-act]');
+    if (el?.matches('.description-view, .description-preview') && t.closest('a, button, input, label, select, textarea, summary')) el = null;
     const fn = el && A[el.dataset.act];
+    if (el?.dataset.act === 'choose-attachments') { $('.image-files')?.click(); return; }
     const before = renderCount;
     run(async () => {
       if (fn) await dispatch(el.dataset.act, el, e);
@@ -1625,13 +1666,18 @@ const answer = 42;
       if (t.value && (!x.card.imageIds?.includes(t.value) || !isImage(ui.modal.images?.find(image => image.id === t.value)))) return;
       mutate(() => { x.card.coverImageId = t.value || null; }, 'Cover changed');
     }
-    else if (f === 'due' && x) { x.card.due = t.value; if (!t.value) x.card.dueDone = false; save(); render(); }
-    else if (f === 'dueDone' && x) {
-      if (t.checked && x.card.recurrence && x.card.due) { x.card.due = dateKey(advanceDate(x.card.due, x.card.recurrence)); x.card.dueDone = false; save(); render(); toast(`Next due date: ${fmtDate(x.card.due)}`); }
-      else { x.card.dueDone = t.checked; save(); render(); }
+    else if (f === 'due' && x) { x.card.due = t.value; x.card.dueDone = !!t.value && x.card.completed; save(); render(); }
+    else if (f === 'completed' && x) {
+      if (t.checked && x.card.recurrence && x.card.due) {
+        x.card.due = dateKey(advanceDate(x.card.due, x.card.recurrence));
+        x.card.completed = false; x.card.dueDone = false;
+        save(); render(); toast(`Next due date: ${fmtDate(x.card.due)}`);
+      } else {
+        x.card.completed = t.checked; x.card.dueDone = !!x.card.due && t.checked;
+        save(); render();
+      }
     }
     else if (f === 'priority' && x) { x.card.priority = t.value; save(); render(); }
-    else if (f === 'completed' && x) { x.card.completed = t.checked; save(); render(); }
     else if (f === 'recurrence' && x) { x.card.recurrence = t.value; save(); }
     else if (f === 'check-done' && x) { const i = x.card.checklist.find(i => i.id === t.dataset.iid); if (i) { i.done = t.checked; save(); render(); } }
     else if (f === 'move' && x) {
