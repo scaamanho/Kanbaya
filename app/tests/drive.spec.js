@@ -44,7 +44,7 @@ async function mockDrive(page, options = {}) {
     if (url.pathname === '/drive/v3/files/saved-backup') {
       return route.fulfill({
         headers, contentType: 'application/octet-stream',
-        body: options.invalidBackup ? Buffer.from('not a backup') : uploaded || Buffer.from(JSON.stringify(fixture(4)))
+        body: options.invalidBackup ? Buffer.from('not a backup') : uploaded || Buffer.from(JSON.stringify(options.backup || fixture(4)))
       });
     }
     throw new Error('Unexpected mocked Drive request: ' + request.url());
@@ -69,7 +69,7 @@ async function counts(page) {
 }
 
 for (const withAttachment of [false, true]) {
-  test(`Drive saves and imports .kanbaya backups ${withAttachment ? 'with' : 'without'} attachments without replacing local boards`, async ({ page }) => {
+  test(`Drive saves and merges identical .kanbaya backups ${withAttachment ? 'with' : 'without'} attachments without duplicating boards`, async ({ page }) => {
     const mock = await mockDrive(page);
     await seed(page, fixture(4));
     if (withAttachment) {
@@ -110,7 +110,14 @@ for (const withAttachment of [false, true]) {
     await dialog.getByLabel('Backup', { exact: true }).selectOption('saved-backup');
     await dialog.getByRole('button', { name: 'Import backup', exact: true }).click();
     await expect(dialog.getByRole('status')).toContainText('Backup imported');
-    expect(await counts(page)).toEqual({ boards: 4, images: withAttachment ? 2 : 0 });
+    await expect(page.getByRole('dialog', { name: /^Conflicts in / })).toHaveCount(0);
+    expect(await counts(page)).toEqual({ boards: 2, images: withAttachment ? 1 : 0 });
+    expect(await page.evaluate(async () => {
+      const store = new KanbayaStore();
+      await store.db.open();
+      try { return await store.db.boards.toCollection().primaryKeys(); }
+      finally { store.db.close(); }
+    })).toEqual(['board0', 'board1']);
     if (withAttachment) {
       const attachments = await page.evaluate(async () => {
         const store = new KanbayaStore();
@@ -121,8 +128,7 @@ for (const withAttachment of [false, true]) {
           })));
         } finally { store.db.close(); }
       });
-      expect(attachments[0].id).not.toBe(attachments[1].id);
-      expect(attachments[0].bytes).toEqual(attachments[1].bytes);
+      expect(attachments).toEqual([{ id: data.images[0].id, bytes: [...mock.uploaded().subarray(12 + mock.uploaded().readUInt32LE(8))] }]);
     }
     expect(await page.evaluate(() => [localStorage, sessionStorage].some(storage => Object.values(storage).some(value => value.includes('drive-test-token'))))).toBe(false);
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
@@ -179,24 +185,78 @@ for (const withAttachment of [false, true]) {
     expect(await counts(page)).toEqual({ boards: 2, images: withAttachment ? 2 : 0 });
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(page.locator('[data-act="board-menu"]')).toBeFocused();
+    await page.locator('[data-act="board-menu"]').click();
+    await page.locator('[data-act="del-board"]').click();
+    await page.locator('.app-dialog').getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect.poll(() => counts(page)).toEqual({ boards: 1, images: withAttachment ? 1 : 0 });
     dialog = await openDrive(page, 'import');
+    await expect(dialog).toContainText('Import merges boards with matching IDs');
     await dialog.getByLabel('Backup', { exact: true }).selectOption('saved-backup');
     await dialog.getByRole('button', { name: 'Import backup', exact: true }).click();
     await expect(dialog.getByRole('status')).toContainText('Backup imported');
-    expect(await counts(page)).toEqual({ boards: 3, images: withAttachment ? 3 : 0 });
+    expect(await counts(page)).toEqual({ boards: 2, images: withAttachment ? 2 : 0 });
     const restored = await page.evaluate(async () => {
       const store = new KanbayaStore();
       await store.db.open();
       try {
-        const board = (await store.db.boards.toArray()).find(board => !['board0', 'board1'].includes(board.id));
+        const board = await store.db.boards.get('board0');
         return {
+          id: board.id,
           name: board.name,
-          cards: await store.db.cards.where('boardId').equals(board.id).count(),
-          attachments: await store.db.images.where('boardId').equals(board.id).count()
+          cards: await store.db.cards.where('boardId').equals(board.id).primaryKeys(),
+          attachments: await store.db.images.where('boardId').equals(board.id).primaryKeys()
         };
       } finally { store.db.close(); }
     });
-    expect(restored).toEqual({ name: 'Tablero 0', cards: 70, attachments: withAttachment ? 1 : 0 });
+    expect(restored.id).toBe('board0');
+    expect(restored.name).toBe('Tablero 0');
+    expect(restored.cards.map(key => key[1]).sort()).toEqual(cards.map(card => card.id).sort());
+    expect(restored.attachments).toEqual(data.images.map(image => image.id));
+  });
+}
+
+for (const choice of ['Keep local version', 'Use backup version', 'Cancel import']) {
+  test(`Drive resolves differing boards with "${choice}" without duplicating IDs`, async ({ page }) => {
+    const local = fixture(4), backup = fixture(4);
+    local.boards[0].lists[0].cards[0].title = 'Local title';
+    const remoteCard = structuredClone(backup.boards[0].lists[0].cards[0]);
+    remoteCard.id = 'remote-card';
+    remoteCard.title = 'Backup-only card';
+    backup.boards[0].lists[0].cards.push(remoteCard);
+    const localCard = structuredClone(local.boards[0].lists[0].cards[0]);
+    localCard.id = 'local-card';
+    localCard.title = 'Local-only card';
+    local.boards[0].lists[0].cards.push(localCard);
+    await mockDrive(page, { backup });
+    await seed(page, local);
+    await expect(page.getByRole('button', { name: 'Data menu', exact: true })).toBeVisible();
+    const before = await page.evaluate(async () => {
+      const store = new KanbayaStore();
+      try { return await store.exportState(); } finally { store.db.close(); }
+    });
+    const dialog = await openDrive(page, 'import');
+    await connect(dialog);
+    await dialog.getByLabel('Backup', { exact: true }).selectOption('saved-backup');
+    await dialog.getByRole('button', { name: 'Import backup', exact: true }).click();
+    const conflict = page.getByRole('dialog', { name: 'Conflicts in Tablero 0', exact: true });
+    await expect(conflict).toBeVisible();
+    for (const name of ['Keep local version', 'Use backup version', 'Cancel import']) {
+      await expect(conflict.getByRole('button', { name, exact: true })).toBeVisible();
+    }
+    await conflict.getByRole('button', { name: choice, exact: true }).click();
+    await expect(dialog.getByRole('status')).toContainText(choice === 'Cancel import' ? 'Import cancelled' : 'Backup imported');
+    const after = await page.evaluate(async () => {
+      const store = new KanbayaStore();
+      try { return await store.exportState(); } finally { store.db.close(); }
+    });
+    if (choice === 'Cancel import') expect(after).toEqual(before);
+    else {
+      expect(after.boards.map(board => board.id)).toEqual(['board0', 'board1']);
+      const cards = after.boards[0].lists.flatMap(list => list.cards);
+      expect(cards.find(card => card.id === 'card0').title).toBe(choice === 'Keep local version' ? 'Local title' : 'Tarea 0');
+      expect(cards.map(card => card.id).sort()).toEqual(['card0', 'card2', 'local-card', 'remote-card']);
+    }
+    expect(await counts(page)).toEqual({ boards: 2, images: 0 });
   });
 }
 
@@ -270,5 +330,7 @@ test('offline Drive and a failed Google script show errors while local import re
   await expect(dialog.getByRole('alert')).toContainText('Internet connection');
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.locator('#import-file').setInputFiles({ name: 'local.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture(4))) });
-  await expect.poll(() => counts(page)).toEqual({ boards: 4, images: 0 });
+  await expect(page.locator('.toast')).toContainText('imported');
+  await expect(page.getByRole('dialog', { name: /^Conflicts in / })).toHaveCount(0);
+  expect(await counts(page)).toEqual({ boards: 2, images: 0 });
 });

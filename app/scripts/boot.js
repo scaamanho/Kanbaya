@@ -1,6 +1,6 @@
 'use strict';
 (() => {
-  const VERSION = '31';
+  const VERSION = '32';
   let installEvent = null;
   const installBanner = document.createElement('section');
   installBanner.className = 'install-banner';

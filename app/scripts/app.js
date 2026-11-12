@@ -1117,39 +1117,178 @@ const answer = 42;
     const backup = await store.exportBackup(boards.map(b => b.id), includeTemplates);
     download(`${name || 'kanbaya'}-${todayStr()}.${backup.extension}`, backup.blob);
   }
+  function mergeConflictDialog(board, conflicts) {
+    return new Promise(resolve => {
+      const previousFocus = document.activeElement;
+      const dialog = document.createElement('dialog');
+      dialog.className = 'modal narrow app-dialog merge-conflict-dialog';
+      dialog.setAttribute('aria-labelledby', 'merge-conflict-title');
+      dialog.innerHTML = `<form method="dialog">
+        <h3 id="merge-conflict-title">Conflicts in ${esc(board.name)}</h3>
+        <p>Both versions contain different changes to this board. Choose which version takes precedence for conflicting board settings, lists and whole cards, including their attachments and lane positions. Items present in only one version are kept.</p>
+        <ul class="merge-conflicts">${conflicts.slice(0, 30).map(conflict => `<li>${esc(conflict)}</li>`).join('')}</ul>
+        ${conflicts.length > 30 ? `<p>And ${conflicts.length - 30} more conflicts.</p>` : ''}
+        <div class="actions"><button value="cancel" class="btn">Cancel import</button><button value="local" class="btn">Keep local version</button><button value="backup" class="btn primary">Use backup version</button></div>
+      </form>`;
+      dialog.addEventListener('click', event => event.stopPropagation());
+      dialog.addEventListener('keydown', event => event.stopPropagation());
+      dialog.addEventListener('close', () => {
+        const result = ['local', 'backup'].includes(dialog.returnValue) ? dialog.returnValue : null;
+        dialog.remove();
+        if (previousFocus?.isConnected && !previousFocus.closest('[inert]')) previousFocus.focus({ preventScroll: true });
+        resolve(result);
+      }, { once: true });
+      document.body.append(dialog);
+      dialog.showModal();
+      $('button[value="cancel"]', dialog).focus();
+    });
+  }
+  const sameValue = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const without = (value, ...keys) => Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
+  const differentFields = (a, b) => [...new Set([...Object.keys(a), ...Object.keys(b)])].filter(key => !sameValue(a[key], b[key]));
+  function matchingOrder(a, b) {
+    const aIds = new Set(a.map(item => item.id)), bIds = new Set(b.map(item => item.id));
+    return sameValue(a.filter(item => bIds.has(item.id)).map(item => item.id), b.filter(item => aIds.has(item.id)).map(item => item.id));
+  }
+  function boardConflicts(local, backup) {
+    const conflicts = [];
+    const fields = differentFields(without(local, 'lists', 'labels'), without(backup, 'lists', 'labels'));
+    if (fields.length) conflicts.push(`Board settings: ${fields.join(', ')}.`);
+    if (!matchingOrder(local.labels, backup.labels)) conflicts.push('Label order differs.');
+    if (!matchingOrder(local.lists, backup.lists)) conflicts.push('Lane order differs.');
+    const labels = new Map(local.labels.map(label => [label.id, label]));
+    for (const label of backup.labels) {
+      if (labels.has(label.id) && !sameValue(labels.get(label.id), label)) conflicts.push(`Label "${labels.get(label.id).name}" / "${label.name}" differs.`);
+    }
+    const lists = new Map(local.lists.map(list => [list.id, list]));
+    const cards = new Map(local.lists.flatMap(list => list.cards.map(card => [card.id, { card, list }])));
+    for (const list of backup.lists) {
+      const other = lists.get(list.id);
+      if (other) {
+        const changed = differentFields(without(other, 'cards'), without(list, 'cards'));
+        if (changed.length) conflicts.push(`Lane "${other.name}" / "${list.name}": ${changed.join(', ')}.`);
+        if (!matchingOrder(other.cards, list.cards)) conflicts.push(`Card order in lane "${list.name}" differs.`);
+      }
+      for (const card of list.cards) {
+        const found = cards.get(card.id);
+        if (!found) continue;
+        const changed = differentFields(found.card, card);
+        if (found.list.id !== list.id) changed.push(`lane: "${found.list.name}" → "${list.name}"`);
+        if (changed.length) conflicts.push(`Card "${found.card.title}" / "${card.title}": ${changed.join(', ')}.`);
+      }
+    }
+    return conflicts;
+  }
+  function mergeBoard(preferred, other) {
+    const merged = structuredClone(preferred);
+    const labels = new Set(merged.labels.map(label => label.id));
+    merged.labels.push(...other.labels.filter(label => !labels.has(label.id)));
+    const lists = new Map(merged.lists.map(list => [list.id, list]));
+    const cards = new Set(merged.lists.flatMap(list => list.cards.map(card => card.id)));
+    for (const list of other.lists) {
+      let target = lists.get(list.id);
+      if (!target) {
+        target = { ...structuredClone(list), cards: [] };
+        merged.lists.push(target); lists.set(target.id, target);
+      }
+      for (const card of list.cards) {
+        if (!cards.has(card.id)) { target.cards.push(structuredClone(card)); cards.add(card.id); }
+      }
+    }
+    return merged;
+  }
   $('#import-file').addEventListener('change', async e => {
     const file = e.target.files[0]; e.target.value = ''; if (!file) return;
     try {
       const apply = await prepareBackupImport(file);
-      await run(apply);
+      await run(async () => { await apply(); });
     } catch (error) { console.error('Kanbaya: import', error); toast('⚠ The file is not a valid Kanbaya backup'); }
   });
   async function prepareBackupImport(file) {
     const { data, images } = await store.parseBackup(file);
     const source = (Array.isArray(data?.boards) ? data.boards : data?.lists ? [data] : []).map(normBoard).filter(Boolean);
-    const list = source.map(reid), staged = [], used = new Set();
+    const used = new Set(), boardIds = new Set();
     const imageMap = new Map(images.map(image => [image.id, image]));
-    for (let bi = 0; bi < source.length; bi++) for (let li = 0; li < source[bi].lists.length; li++) {
-      for (let ci = 0; ci < source[bi].lists[li].cards.length; ci++) {
-        const card = source[bi].lists[li].cards[ci], copy = list[bi].lists[li].cards[ci], ids = new Map();
-        for (const id of card.imageIds || []) {
-          const image = imageMap.get(id);
-          if (!image || used.has(id) || image.boardId !== source[bi].id || image.cardId !== card.id) throw new Error('Invalid attachment reference in backup.');
-          used.add(id);
-          const nextId = uid();
-          ids.set(id, nextId);
-          staged.push({ ...image, id: nextId, boardId: list[bi].id, cardId: copy.id });
-        }
-        if (card.imageIds) {
+    for (const board of source) {
+      if (boardIds.has(board.id)) throw new Error('Duplicate board ID in backup.');
+      boardIds.add(board.id);
+      const listIds = new Set(), cardIds = new Set(), labelIds = new Set();
+      for (const label of board.labels) {
+        if (labelIds.has(label.id)) throw new Error('Duplicate label ID in backup.');
+        labelIds.add(label.id);
+      }
+      for (const list of board.lists) {
+        if (listIds.has(list.id)) throw new Error('Duplicate list ID in backup.');
+        listIds.add(list.id);
+        for (const card of list.cards) {
+          if (cardIds.has(card.id)) throw new Error('Duplicate card ID in backup.');
+          cardIds.add(card.id);
+          for (const id of card.imageIds || []) {
+            const image = imageMap.get(id);
+            if (!image || used.has(id) || image.boardId !== board.id || image.cardId !== card.id) throw new Error('Invalid attachment reference in backup.');
+            used.add(id);
+          }
           if (card.coverImageId && !isImage(imageMap.get(card.coverImageId))) throw new Error('Invalid cover in backup.');
-          copy.imageIds = [...ids.values()]; copy.coverImageId = ids.get(card.coverImageId) || null;
-          copy.desc = KanbayaStore.remapDescription(copy.desc, ids);
         }
       }
     }
     if (used.size !== images.length) throw new Error('The backup contains orphaned attachments.');
-    if (!list.length) throw new Error('empty');
-    return () => mutate(() => { staged.forEach(image => store.stageImage(image)); state.boards.push(...list); if (Array.isArray(data.templates)) state.templates.push(...data.templates.map(t => ({ id: uid(), title: String(t.title || 'Template').slice(0, 100), desc: String(t.desc || ''), checklist: Array.isArray(t.checklist) ? t.checklist.map(x => String(x).slice(0, 200)) : [] }))); }, `${list.length} board(s) imported`);
+    if (!source.length) throw new Error('empty');
+    return async () => {
+      const localState = await store.exportState(source.map(board => board.id));
+      const localBoards = new Map(localState.boards.map(board => [board.id, normBoard(board)]));
+      const choices = new Map();
+      for (const board of source) {
+        const local = localBoards.get(board.id);
+        const conflicts = local ? boardConflicts(local, board) : [];
+        if (conflicts.length) {
+          const choice = await mergeConflictDialog(board, conflicts);
+          if (!choice) return false;
+          choices.set(board.id, choice);
+        }
+      }
+      if (!await discardDescription()) return false;
+      for (const board of source) {
+        const existing = boardById(board.id);
+        if (existing) await store.hydrate(existing);
+      }
+      store.adopt(state);
+      const staged = [];
+      const result = [];
+      for (const board of source) {
+        const local = localBoards.get(board.id), useBackup = choices.get(board.id) === 'backup';
+        const merged = local ? mergeBoard(useBackup ? board : local, useBackup ? local : board) : structuredClone(board);
+        const localCards = new Set((local?.lists || []).flatMap(list => list.cards.map(card => card.id)));
+        for (const list of merged.lists) for (const card of list.cards) {
+          if (local && !useBackup && localCards.has(card.id)) continue;
+          const ids = new Map();
+          for (const id of card.imageIds || []) {
+            const image = imageMap.get(id);
+            if (!image || image.boardId !== board.id || image.cardId !== card.id) continue;
+            const existing = await store.db.images.get(id);
+            const nextId = existing && (existing.boardId !== board.id || existing.cardId !== card.id) ? crypto.randomUUID() : id;
+            ids.set(id, nextId);
+            staged.push({ ...image, id: nextId });
+          }
+          if (ids.size) {
+            card.imageIds = card.imageIds.map(id => ids.get(id) || id);
+            card.coverImageId = ids.get(card.coverImageId) || card.coverImageId;
+            card.desc = KanbayaStore.remapDescription(card.desc, ids);
+          }
+        }
+        result.push(merged);
+      }
+      ui.modal = null;
+      mutate(() => {
+        staged.forEach(image => store.stageImage(image));
+        for (const board of result) {
+          const index = state.boards.findIndex(existing => existing.id === board.id);
+          if (index < 0) state.boards.push(board); else state.boards[index] = board;
+        }
+        if (Array.isArray(data.templates)) state.templates.push(...data.templates.map(t => ({ id: uid(), title: String(t.title || 'Template').slice(0, 100), desc: String(t.desc || ''), checklist: Array.isArray(t.checklist) ? t.checklist.map(x => String(x).slice(0, 200)) : [] })));
+      }, `${result.length} board(s) imported`);
+      return true;
+    };
   }
 
   function driveBackupDialog(mode, board = null) {
@@ -1163,7 +1302,7 @@ const answer = 42;
       <p class="muted">Manual backups only. Google receives a copy when you save; your local boards are not synchronized.</p>
       <button type="button" class="btn" data-drive="connect">Load Google sign-in</button>
       ${mode === 'save' ? `<p>${board ? `Save only the board <strong>${esc(board.name)}</strong> and its attachments. Other boards and personal templates are not included.` : 'Save all boards, templates and attachments.'} Each save creates a new dated backup in the Kanbaya Backups folder.</p><button type="button" class="btn primary" data-drive="save" disabled>Save backup</button>`
-        : '<p>Only backups created by Kanbaya through this integration are listed. Import adds copies of their boards; it does not replace existing boards.</p><label for="drive-backup">Backup</label><select id="drive-backup" disabled><option value="">Connect to list backups</option></select><div class="drive-actions"><button type="button" class="btn" data-drive="refresh" disabled>Refresh</button><button type="button" class="btn primary" data-drive="import" disabled>Import backup</button></div>'}
+        : '<p>Only backups created by Kanbaya through this integration are listed. Import merges boards with matching IDs and asks how to resolve conflicts.</p><label for="drive-backup">Backup</label><select id="drive-backup" disabled><option value="">Connect to list backups</option></select><div class="drive-actions"><button type="button" class="btn" data-drive="refresh" disabled>Refresh</button><button type="button" class="btn primary" data-drive="import" disabled>Import backup</button></div>'}
       <p class="drive-status" role="status" aria-live="polite"></p>
       <div class="actions"><button type="button" class="btn" data-drive="close">Close</button></div>`;
     const connect = $('[data-drive="connect"]', dialog), select = $('select', dialog), close = $('[data-drive="close"]', dialog);
@@ -1223,10 +1362,11 @@ const answer = 42;
     $('[data-drive="import"]', dialog)?.addEventListener('click', () => perform(async () => {
       const file = await drive.download(select.value);
       const apply = await prepareBackupImport(file);
-      let committed = false;
-      await run(async () => { apply(); await flush(); committed = true; });
+      let committed = false, cancelled = false;
+      await run(async () => { if (await apply()) { await flush(); committed = true; } else cancelled = true; });
+      if (cancelled) { message('Import cancelled.'); return; }
       if (!committed) throw new Error('The backup could not be imported. Check the application error notification.');
-      message('Backup imported. Copies were added to your local boards.');
+      message('Backup imported and merged with your local boards.');
     }, 'Downloading and importing backup...'));
     select?.addEventListener('change', updateControls);
     close.onclick = () => dialog.close();

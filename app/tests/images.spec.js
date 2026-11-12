@@ -197,7 +197,7 @@ test('duplicates images independently and cascades card and list deletion with U
   await expect.poll(() => db(page, store => store.db.images.count())).toBe(2);
 });
 
-test('binary backups round-trip image bytes and references, board copies and deletion remain independent', async ({ page }) => {
+test('binary backups merge identical boards preserving image IDs, bytes and references, while board copies remain independent', async ({ page }) => {
   await seed(page);
   await attach(page, await imageFile(page), 1);
   const original = await db(page, async store => {
@@ -214,26 +214,98 @@ test('binary backups round-trip image bytes and references, board copies and del
   expect(buffer.subarray(0, 8).toString()).toBe('KANBAYA4');
   expect([...buffer.subarray(-original.bytes.length)]).toEqual(original.bytes);
   await page.locator('#import-file').setInputFiles({ name: 'backup.kanbaya', mimeType: 'application/octet-stream', buffer });
-  await expect.poll(() => db(page, store => store.db.images.count())).toBe(2);
+  await expect(page.locator('.toast')).toContainText('imported');
+  await expect(page.getByRole('dialog', { name: /^Conflicts in / })).toHaveCount(0);
+  expect(await db(page, store => store.db.images.count())).toBe(1);
+  expect(await db(page, store => store.db.boards.toCollection().primaryKeys())).toEqual(['board0', 'board1']);
   const imported = await db(page, async store => {
-    const images = await store.db.images.toArray();
-    const image = images.find(image => image.boardId !== 'board0');
+    const image = await store.db.images.toCollection().first();
     const card = await store.db.cards.get([image.boardId, image.cardId]);
     return { card, imageId: image.id, bytes: [...new Uint8Array(await image.blob.arrayBuffer())] };
   });
   expect(imported.bytes).toEqual(original.bytes);
-  expect(imported.imageId).not.toBe(original.id);
+  expect(imported.imageId).toBe(original.id);
+  expect(imported.card.id).toBe('card0');
+  expect(imported.card.imageIds).toEqual([original.id]);
   expect(imported.card.coverImageId).toBe(imported.imageId);
   await page.locator('[data-act="board-menu"]').click();
   await page.locator('[data-act="dup-board"]').click();
-  await expect.poll(() => db(page, store => store.db.images.count())).toBe(3);
+  await expect.poll(() => db(page, store => store.db.images.count())).toBe(2);
+  const copied = await db(page, async store => {
+    const image = (await store.db.images.toArray()).find(image => image.boardId !== 'board0');
+    return { id: image.id, bytes: [...new Uint8Array(await image.blob.arrayBuffer())] };
+  });
+  expect(copied.id).not.toBe(original.id);
+  expect(copied.bytes).toEqual(original.bytes);
   await expect(page.locator('.board-title')).toHaveValue('Tablero 0 (copy)');
   await expect.poll(() => page.locator('.card-cover').evaluate(img => img.naturalWidth)).toBe(1600);
   await page.locator('[data-act="board-menu"]').click();
   await page.locator('[data-act="del-board"]').click();
   await page.locator('.app-dialog').getByRole('button', { name: 'Delete' }).click();
-  await expect.poll(() => db(page, store => store.db.images.count())).toBe(2);
+  await expect.poll(() => db(page, store => store.db.images.count())).toBe(1);
+  expect(await db(page, store => store.db.images.toCollection().primaryKeys())).toEqual([original.id]);
 });
+
+for (const choice of ['Keep local version', 'Use backup version', 'Cancel import']) {
+  test(`binary backup conflicts preserve the selected whole card and attachments with "${choice}"`, async ({ page }) => {
+    await seed(page);
+    await attach(page, await imageFile(page), 1);
+    await page.getByRole('button', { name: 'Edit description', exact: true }).click();
+    await page.getByRole('button', { name: 'Insert attached image', exact: true }).click();
+    await page.locator('[data-act="insert-description-image"]').click();
+    await page.getByRole('button', { name: 'Save description', exact: true }).click();
+    const backup = await db(page, async store => {
+      const backup = await store.exportBackup(['board0']);
+      const image = await store.db.images.toCollection().first();
+      return {
+        bytes: [...new Uint8Array(await backup.blob.arrayBuffer())],
+        imageId: image.id, imageBytes: [...new Uint8Array(await image.blob.arrayBuffer())]
+      };
+    });
+    await page.getByLabel('Card title', { exact: true }).fill('Locally edited card');
+    await page.getByLabel('Add attachments from device').setInputFiles({
+      name: 'local-only.txt', mimeType: 'text/plain', buffer: Buffer.from('Keep only with local card')
+    });
+    await expect(page.locator('.image-attachment')).toHaveCount(2);
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    const before = await db(page, store => store.exportState());
+    const imageIds = await db(page, store => store.db.images.toCollection().primaryKeys());
+    await page.locator('#import-file').setInputFiles({
+      name: 'conflict.kanbaya', mimeType: 'application/octet-stream', buffer: Buffer.from(backup.bytes)
+    });
+    const conflict = page.getByRole('dialog', { name: 'Conflicts in Tablero 0', exact: true });
+    await expect(conflict).toBeVisible();
+    for (const name of ['Keep local version', 'Use backup version', 'Cancel import']) {
+      await expect(conflict.getByRole('button', { name, exact: true })).toBeVisible();
+    }
+    expect(await db(page, store => store.exportState())).toEqual(before);
+    await conflict.getByRole('button', { name: choice, exact: true }).click();
+    await expect(conflict).toHaveCount(0);
+    if (choice !== 'Cancel import') await expect(page.locator('.toast')).toContainText('imported');
+    const restored = await db(page, async store => {
+      const card = await store.db.cards.get(['board0', 'card0']);
+      const image = await store.db.images.get(card.coverImageId);
+      return {
+        card, desc: (await store.db.cardDetails.get(['board0', 'card0'])).desc,
+        ids: await store.db.images.toCollection().primaryKeys(),
+        bytes: [...new Uint8Array(await image.blob.arrayBuffer())]
+      };
+    });
+    expect(restored.card.title).toBe(choice === 'Use backup version' ? 'Tarea 0' : 'Locally edited card');
+    expect(restored.card.coverImageId).toBe(backup.imageId);
+    expect(restored.desc).toContain(`attachment:${backup.imageId}`);
+    expect(restored.bytes).toEqual(backup.imageBytes);
+    expect(restored.ids).toEqual(choice === 'Use backup version' ? [backup.imageId] : imageIds);
+    expect(restored.card.imageIds).toHaveLength(choice === 'Use backup version' ? 1 : 2);
+    expect(await db(page, store => store.db.boards.toCollection().primaryKeys())).toEqual(['board0', 'board1']);
+    if (choice === 'Cancel import') expect(await db(page, store => store.exportState())).toEqual(before);
+    await page.reload();
+    await page.locator('.card').filter({ hasText: restored.card.title }).click();
+    await expect(page.locator('.image-attachment')).toHaveCount(restored.card.imageIds.length);
+    await expect(page.locator('.modal-cover')).toHaveAttribute('data-image-id', backup.imageId);
+    await expect(page.locator('.description-view img')).toHaveCount(1);
+  });
+}
 
 test('quota failures roll back both the image and the card reference', async ({ page }) => {
   await seed(page);
@@ -449,7 +521,7 @@ test('inserts attached images at the description cursor, escapes text and persis
   await expect(page.locator('.description-view img')).toHaveCount(1);
 });
 
-test('mixed backups and copies remap description references while retaining exact compressed bytes', async ({ page }) => {
+test('mixed backup merges retain IDs and exact compressed bytes while copies remap description references', async ({ page }) => {
   await seed(page);
   await page.getByLabel('Add attachments from device').setInputFiles({
     name: 'data.bin', mimeType: 'application/octet-stream', buffer: Buffer.from([0, 1, 2, 255, 0, 99])
@@ -498,22 +570,29 @@ test('mixed backups and copies remap description references while retaining exac
   await page.locator('#import-file').setInputFiles({
     name: 'mixed.kanbaya', mimeType: 'application/octet-stream', buffer: Buffer.from(result.bytes)
   });
-  await expect.poll(() => db(page, store => store.db.images.count())).toBe(8);
+  await expect(page.locator('.toast')).toContainText('imported');
+  await expect(page.getByRole('dialog', { name: /^Conflicts in / })).toHaveCount(0);
+  expect(await db(page, store => store.db.images.count())).toBe(4);
+  expect(await db(page, store => store.db.boards.toCollection().primaryKeys())).toEqual(['board0', 'board1']);
   const imported = await db(page, async store => {
     const rows = await store.db.cards.toArray();
-    const cards = rows.filter(card => card.boardId !== 'board0' && card.imageIds?.length);
+    const cards = rows.filter(card => card.boardId === 'board0' && card.imageIds?.length);
     return Promise.all(cards.map(async card => ({
-      cover: card.coverImageId, desc: (await store.db.cardDetails.get([card.boardId, card.id])).desc
+      id: card.id, imageIds: card.imageIds, cover: card.coverImageId, desc: (await store.db.cardDetails.get([card.boardId, card.id])).desc
     })));
   });
+  expect(imported).toHaveLength(2);
   for (const card of imported) {
     expect(card.desc).toContain(`attachment:${card.cover})`);
     expect(card.desc).toContain(`[photo]: attachment:${card.cover}`);
-    expect(copies.some(copy => copy.coverImageId === card.cover)).toBe(false);
+    const original = copies.find(copy => copy.id === card.id);
+    expect(card.cover).toBe(original.coverImageId);
+    expect(card.imageIds).toEqual(original.imageIds);
+    expect(card.desc).toBe(original.desc);
   }
   await page.locator('[data-act="board-menu"]').click();
   await page.locator('[data-act="dup-board"]').click();
-  await expect.poll(() => db(page, store => store.db.images.count())).toBe(12);
+  await expect.poll(() => db(page, store => store.db.images.count())).toBe(8);
   const boardCopies = await db(page, async store => {
     const board = (await store.db.boards.toArray()).find(board => board.name === 'Tablero 0 (copy)');
     const cards = await store.db.cards.where('boardId').equals(board.id).toArray();
@@ -525,6 +604,7 @@ test('mixed backups and copies remap description references while retaining exac
   for (const card of boardCopies) {
     expect(card.desc).toContain(`attachment:${card.cover})`);
     expect(card.desc).toContain(`[photo]: attachment:${card.cover}`);
+    expect(copies.some(copy => copy.coverImageId === card.cover)).toBe(false);
   }
 });
 

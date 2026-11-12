@@ -305,6 +305,7 @@ test('lane options survive backup export/import and the full menu fits mobile he
   await menu(page, 'Collapse list');
   const json = await db(page, async store => (await store.parseBackup((await store.exportBackup(['board0'])).blob)).data);
   expect(json.boards[0].lists[0]).toMatchObject({ collapsed: true, wipLimit: 8 });
+  json.boards[0].id = 'imported-board';
   const invalid = structuredClone(json);
   invalid.boards[0].lists[0].wipLimit = -1;
   await page.locator('#import-file').setInputFiles({

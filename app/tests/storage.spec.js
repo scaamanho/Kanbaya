@@ -224,15 +224,17 @@ test('export without attachments uses .kanbaya, includes unloaded details and im
   expect(json.boards[0].lists[0].cards[0]).toEqual(fixture(200).boards[0].lists[0].cards[0]);
   expect(Object.keys(json.boards[0]).sort()).toEqual(Object.keys(fixture(200).boards[0]).sort());
   await page.locator('#import-file').setInputFiles({ name: 'copia.kanbaya', mimeType: 'application/octet-stream', buffer });
-  await expect.poll(() => db(page, store => store.db.cards.count())).toBe(400);
+  await expect.poll(() => db(page, store => store.db.templates.count())).toBe(2);
+  expect(await db(page, store => store.db.cards.count())).toBe(200);
   expect(await db(page, store => store.db.templates.count())).toBe(2);
   json.version = 2;
   delete json.images;
   await page.locator('#import-file').setInputFiles({ name: 'copia.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(json)) });
-  await expect.poll(() => db(page, store => store.db.cards.count())).toBe(600);
+  await expect.poll(() => db(page, store => store.db.templates.count())).toBe(3);
+  expect(await db(page, store => store.db.cards.count())).toBe(200);
   expect(await db(page, store => store.db.templates.count())).toBe(3);
 });
-test('local board export without attachments uses .kanbaya and imports only that board', async ({ page }) => {
+test('local board export without attachments uses .kanbaya and merges without duplicates', async ({ page }) => {
   await seed(page, fixture(4));
   await page.locator('[data-act="board-menu"]').click();
   const pending = page.waitForEvent('download');
@@ -246,8 +248,90 @@ test('local board export without attachments uses .kanbaya and imports only that
   expect(data.images).toEqual([]);
   expect(data.templates).toBeUndefined();
   await page.locator('#import-file').setInputFiles({ name: 'board.kanbaya', mimeType: 'application/octet-stream', buffer });
-  await expect.poll(() => db(page, store => store.db.boards.count())).toBe(3);
-  expect(await db(page, store => store.db.cards.count())).toBe(6);
+  await expect(page.locator('.toast')).toContainText('1 board(s) imported');
+  expect(await db(page, store => store.db.boards.count())).toBe(2);
+  expect(await db(page, store => store.db.cards.count())).toBe(4);
+});
+for (const preferred of ['local', 'backup']) {
+  test(`merges matching boards and uses ${preferred} for conflicting cards and lanes`, async ({ page }) => {
+    const data = fixture(4);
+    await seed(page, data);
+    await expect(page.locator('.board-title')).toHaveValue('Tablero 0');
+    const backup = structuredClone(data);
+    backup.templates = [];
+    const board = backup.boards[0], card = board.lists[0].cards.shift();
+    card.title = 'Edited in backup';
+    board.name = 'Backup board';
+    board.lists[1].cards.push(card);
+    board.lists[0].cards = [{ ...structuredClone(card), id: 'backup-only', title: 'Backup only' }];
+    await page.locator('#import-file').setInputFiles({
+      name: 'merge.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup))
+    });
+    const dialog = page.getByRole('dialog', { name: 'Conflicts in Backup board' });
+    await expect(dialog).toBeVisible();
+    await page.setViewportSize({ width: 320, height: 600 });
+    expect(await dialog.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    await dialog.getByRole('button', { name: preferred === 'local' ? 'Keep local version' : 'Use backup version' }).click();
+    await expect(page.locator('.toast')).toContainText('2 board(s) imported');
+    const result = await db(page, store => store.exportState(['board0']));
+    const merged = result.boards[0];
+    expect(merged.name).toBe(preferred === 'local' ? 'Tablero 0' : 'Backup board');
+    const lists = merged.lists.map(list => ({ id: list.id, cards: list.cards.map(card => ({ id: card.id, title: card.title })) }));
+    const source = preferred === 'local' ? 'list0' : 'empty0';
+    expect(lists.find(list => list.id === source).cards).toContainEqual({ id: 'card0', title: preferred === 'local' ? 'Tarea 0' : 'Edited in backup' });
+    expect(lists.find(list => list.id === 'list0').cards.map(card => card.id)).toEqual(expect.arrayContaining(['card2', 'backup-only']));
+    expect(await db(page, store => store.db.boards.count())).toBe(2);
+    expect(await db(page, store => store.db.cards.count())).toBe(5);
+  });
+}
+test('cancelling a conflict leaves all boards unchanged', async ({ page }) => {
+  const data = fixture(4);
+  await seed(page, data);
+  await expect(page.locator('.board-title')).toHaveValue('Tablero 0');
+  const backup = structuredClone(data);
+  backup.boards[0].name = 'Changed first';
+  backup.boards[1].name = 'Changed second';
+  await page.locator('#import-file').setInputFiles({
+    name: 'cancel.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup))
+  });
+  await page.getByRole('dialog', { name: 'Conflicts in Changed first' }).getByRole('button', { name: 'Use backup version' }).click();
+  await page.getByRole('dialog', { name: 'Conflicts in Changed second' }).getByRole('button', { name: 'Cancel import' }).click();
+  const result = await db(page, store => store.exportState());
+  expect(result.boards.map(board => board.name)).toEqual(['Tablero 0', 'Tablero 1']);
+  expect(result.templates).toHaveLength(1);
+});
+test('merge adds new boards and cards without asking when shared items are unchanged', async ({ page }) => {
+  const data = fixture(4);
+  await seed(page, data);
+  await expect(page.locator('.board-title')).toHaveValue('Tablero 0');
+  const backup = structuredClone(data);
+  backup.templates = [];
+  backup.boards[0].lists[0].cards.push({ ...structuredClone(backup.boards[0].lists[0].cards[0]), id: 'new-card', title: 'New card' });
+  backup.boards.push({ ...structuredClone(backup.boards[1]), id: 'new-board', name: 'New board' });
+  await page.locator('#import-file').setInputFiles({
+    name: 'additions.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup))
+  });
+  await expect(page.locator('.toast')).toContainText('3 board(s) imported');
+  expect(await db(page, store => store.db.boards.count())).toBe(3);
+  expect(await db(page, store => store.db.cards.get(['board0', 'new-card']))).toMatchObject({ title: 'New card' });
+  expect(await db(page, store => store.db.boards.get('new-board'))).toMatchObject({ name: 'New board' });
+  await expect(page.getByRole('dialog', { name: /Conflicts in/ })).toHaveCount(0);
+});
+test('a merge exceeding a WIP limit rolls back every imported board', async ({ page }) => {
+  const data = fixture(4);
+  data.boards[0].lists[0].wipLimit = 2;
+  await seed(page, data);
+  await expect(page.locator('.board-title')).toHaveValue('Tablero 0');
+  const backup = structuredClone(data);
+  backup.boards[0].lists[0].cards.push({ ...structuredClone(backup.boards[0].lists[0].cards[0]), id: 'new-card' });
+  backup.boards.push({ ...structuredClone(backup.boards[1]), id: 'new-board' });
+  await page.locator('#import-file').setInputFiles({
+    name: 'over-limit.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup))
+  });
+  await expect(page.locator('.toast')).toContainText('WIP limit reached');
+  expect(await db(page, store => store.db.boards.count())).toBe(2);
+  expect(await db(page, store => store.db.cards.count())).toBe(4);
+  expect(await db(page, store => store.db.templates.count())).toBe(1);
 });
 test('card completion drives deadline filters, statistics and calendar status', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-11-12T12:00:00'));
@@ -412,9 +496,9 @@ test('a cached previous release detects the deployed update on startup and prese
   await expect(page.locator('.card').filter({ hasText: 'Saved before updating' })).toBeVisible();
   expect(await db(page, store => store.db.cards.count())).toBe(4);
   const cachesAfterUpdate = await page.evaluate(() => caches.keys());
-  expect(cachesAfterUpdate).toContain('kanbaya-pwa-v31');
+  expect(cachesAfterUpdate).toContain('kanbaya-pwa-v32');
   expect(cachesAfterUpdate).not.toContain('kanbaya-pwa-v27');
-  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '31'))).toBe(true);
+  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '32'))).toBe(true);
 
   await context.setOffline(true);
   await page.reload();

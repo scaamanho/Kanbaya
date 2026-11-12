@@ -122,7 +122,7 @@ When opening `app/` on the same origin after using version 23 at the repository 
 
 When changing production resources, update the version in `app/scripts/boot.js`, `app/sw.js`, their precache entries, and the versioned references in `app/index.html` together. Do not change a published schema under the same version number: add a new Dexie version and its migration.
 
-Product **1.1.0**, including Google Drive backups, uses coordinated asset/cache version **31**, so earlier installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database migration or reinstall is needed for this release.
+Product **1.1.0**, including Google Drive backups, uses coordinated asset/cache version **32**, so earlier installations can discover this release on their next online startup and offer **Activate update and reload**. Deploy the complete resource set at the same origin and application path; pushing to GitHub alone is not a deployment. Changing only `PRODUCT_VERSION` does not trigger an update. No database migration or reinstall is needed for this release.
 
 ## Backups and recovery
 
@@ -136,11 +136,11 @@ On failure, writes are blocked and recovery and reload options are offered:
 - If it cannot be read: download the available partial draft.
 - A partial draft **is not a complete importable backup**. Do not delete the database or reload with an important draft without exporting it first.
 
-Import accepts version 2 JSON and version 4 `.kanbaya`/`KANBAYA4` backups. It regenerates board, card, and attachment IDs and their references (including description images), so internal board links change. Older application versions cannot import version 4 backups. The existing "Delete all data" command deletes boards and their attachments but keeps the theme and templates.
+Import accepts version 2 JSON and version 4 `.kanbaya`/`KANBAYA4` backups. Boards with matching IDs are merged; lanes, cards and labels found in only one version are retained. For conflicting board settings, lists, card contents or card positions, choose which version takes precedence for that board. The chosen version supplies each conflicting card as a whole, including its attachments; attachments unique to the other version of that card are not retained. Cancelling leaves all boards unchanged. The application cannot distinguish a deletion from a new item without a shared history, so a deleted item present in the other version is kept. Boards imported by older versions were assigned new IDs and cannot be matched automatically. Templates are imported as copies. Older application versions cannot import version 4 backups. The existing "Delete all data" command deletes boards and their attachments but keeps the theme and templates.
 
 ### Google Drive backups
 
-Use **Data > Save backup to Google Drive…** or **Import backup from Google Drive…**, then **Connect / change Google account**. Saving copies all boards, templates and attachments into the visible **Kanbaya Backups** folder, without overwriting earlier backups. Import lists backups created through this integration and adds independent copies of their boards using the same validation and formats as local import. Manually uploaded files are not listed; download those and use local import instead.
+Use **Data > Save backup to Google Drive…** or **Import backup from Google Drive…**, then **Connect / change Google account**. Saving copies all boards, templates and attachments into the visible **Kanbaya Backups** folder, without overwriting earlier backups. Import lists backups created through this integration and merges boards using the same rules as local import. Manually uploaded files are not listed; download those and use local import instead.
 
 For an individual board, open **Board menu > Save this board to Google Drive…**. This includes only that board and its attachments, not other boards or personal templates, matching local board export. The filename includes the board name and a timestamp. Every save creates a new backup, never overwriting an earlier file. Individual-board and full backups share the same Drive import action.
 
@@ -193,6 +193,8 @@ python -m http.server 8766
 netstat -ano | findstr :8766
 tasklist /FI "PID eq 1234"
 taskkill /PID 1234 /F
+
+node app\tests\server.js
 
 
 <a href="https://www.buymeacoffee.com/scaamanho" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 30px !important;width: 100px !important;" ></a>

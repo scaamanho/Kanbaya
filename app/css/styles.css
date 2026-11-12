@@ -417,6 +417,8 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none 
 }
 .app-dialog::backdrop { background: var(--overlay); }
 .app-dialog p { overflow-wrap: anywhere; }
+.merge-conflicts { overflow-wrap: anywhere; }
+.merge-conflict-dialog .actions { flex-wrap: wrap; }
 .drive-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .drive-status { min-height: 1.4em; }
 .drive-status[role="alert"] { color: var(--danger); }
