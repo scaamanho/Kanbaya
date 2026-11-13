@@ -4,7 +4,7 @@
   "license": "CC-BY-NC-ND-4.0",
   "scripts": {
     "test": "playwright test",
-    "check": "node --check scripts/app.js && node --check scripts/storage.js && node --check scripts/virtual.js && node --check scripts/drive.js && node --check scripts/boot.js && node --check sw.js"
+    "check": "node --check scripts/app.js && node --check scripts/model.js && node --check scripts/backup-merge.js && node --check scripts/dialogs.js && node --check scripts/attachments.js && node --check scripts/description-editor.js && node --check scripts/timeline.js && node --check scripts/storage.js && node --check scripts/virtual.js && node --check scripts/drive.js && node --check scripts/boot.js && node --check sw.js"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",

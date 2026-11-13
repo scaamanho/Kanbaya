@@ -18,6 +18,41 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(async ({ page }) => {
   expect(page.errors).toEqual([]);
 });
+test('standalone model and backup merge retain preferred card placement and remap copied labels', async ({ page }) => {
+  await page.goto('/tests/blank');
+  await page.addScriptTag({ url: '/app/scripts/model.js' });
+  await page.addScriptTag({ url: '/app/scripts/backup-merge.js' });
+  const result = await page.evaluate(data => {
+    const local = KanbayaModel.normBoard(data.boards[0]);
+    const backup = structuredClone(local);
+    local.lists[0].cards.push(KanbayaModel.mkCard('Local only'));
+    const moved = backup.lists[0].cards.shift();
+    moved.desc = 'Preferred description';
+    backup.lists[1].cards.push(moved);
+    const before = structuredClone({ local, backup });
+    const conflicts = KanbayaBackupMerge.boardConflicts(local, backup);
+    const merged = KanbayaBackupMerge.mergeBoard(backup, local);
+    const copy = KanbayaModel.reid(merged);
+    const copiedCard = copy.lists[1].cards[0];
+    return {
+      before, after: { local, backup }, conflicts,
+      sourceTitles: merged.lists[0].cards.map(card => card.title),
+      destination: merged.lists[1].cards,
+      cardIds: merged.lists.flatMap(list => list.cards.map(card => card.id)),
+      copiedCard, copiedLabelId: copy.labels[0].id,
+      originalLabelId: merged.labels[0].id
+    };
+  }, fixture(4));
+  expect(result.after).toEqual(result.before);
+  expect(result.conflicts.some(conflict => conflict.includes('lane:'))).toBe(true);
+  expect(result.sourceTitles).toEqual(['Tarea 2', 'Local only']);
+  expect(result.destination).toHaveLength(1);
+  expect(result.destination[0]).toMatchObject({ id: 'card0', desc: 'Preferred description' });
+  expect(new Set(result.cardIds).size).toBe(result.cardIds.length);
+  expect(result.copiedCard.id).not.toBe('card0');
+  expect(result.copiedCard.labels).toEqual([result.copiedLabelId]);
+  expect(result.copiedLabelId).not.toBe(result.originalLabelId);
+});
 test('lane menu Add card opens a focused composer and saves in the selected lane', async ({ page }) => {
   await seed(page);
   const lane = page.locator('.list[data-id="empty0"]');
@@ -615,7 +650,9 @@ test('offline reload retains dependencies and supports writes', async ({ page, c
     };
   });
   expect(resources.paths).toEqual(expect.arrayContaining([
-    '/app/css/styles.css', '/app/scripts/boot.js', '/app/scripts/app.js', '/app/scripts/storage.js', '/app/scripts/virtual.js'
+    '/app/css/styles.css', '/app/scripts/boot.js', '/app/scripts/app.js', '/app/scripts/storage.js', '/app/scripts/virtual.js',
+    '/app/scripts/model.js', '/app/scripts/backup-merge.js', '/app/scripts/dialogs.js',
+    '/app/scripts/attachments.js', '/app/scripts/description-editor.js', '/app/scripts/timeline.js'
   ]));
   expect(resources.allAvailable).toBe(true);
   expect(resources.stylesheetLoaded).toBe(true);
@@ -667,9 +704,9 @@ test('a cached previous release detects the deployed update on startup and prese
   await expect(page.locator('.card').filter({ hasText: 'Saved before updating' })).toBeVisible();
   expect(await db(page, store => store.db.cards.count())).toBe(4);
   const cachesAfterUpdate = await page.evaluate(() => caches.keys());
-  expect(cachesAfterUpdate).toContain('kanbaya-pwa-v39');
+  expect(cachesAfterUpdate).toContain('kanbaya-pwa-v40');
   expect(cachesAfterUpdate).not.toContain('kanbaya-pwa-v27');
-  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '39'))).toBe(true);
+  expect(await page.evaluate(() => [...document.scripts].filter(script => script.src).every(script => new URL(script.src).searchParams.get('v') === '40'))).toBe(true);
 
   await context.setOffline(true);
   await page.reload();

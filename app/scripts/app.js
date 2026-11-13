@@ -1,17 +1,7 @@
 'use strict';
 /* Kanbaya PWA. Persistencia transaccional local con Dexie. */
 (() => {
-  const PRODUCT_VERSION = '1.2.1';
-  const PALETTE = ['#4bce97', '#f5cd47', '#fea362', '#f87168', '#9f8fef', '#579dff', '#6cc3e0', '#94c748', '#e774bb', '#8c9bab'];
-  const PRIORITIES = [{ value: '', label: 'No priority' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'critical', label: 'Critical' }];
-  const WELCOME_PRIORITIES = {
-    '👋 Welcome: drag this card to another list': 'low',
-    'Click a card to view its details': 'medium',
-    'Create your own board with "＋ Create"': 'high',
-    'Your data is saved only in this browser': 'critical',
-    'Install the app (browser menu → Install)': 'low'
-  };
-  const WELCOME_DAY_RANGES = [[1, 6], [4, 11], [9, 16], [15, 23], [22, 28]];
+  const PRODUCT_VERSION = '1.3.0';
   const EMOJIS = ['😀', '😊', '😍', '👍', '🙌', '✅', '⭐', '🔥', '🎯', '🚀', '💡', '📌', '📅', '⏰', '🎉', '🌴', '☀️', '🌱', '💪', '❤️', '📝', '📚', '💻', '🏠', '🛒', '🎨'];
   const CUSTOM_COLORS = ['#ffffff', '#d9ebff', '#d7f5e8', '#ffe8c2', '#ffdce5', '#e9ddff', '#e8e8e8', '#343a40'];
   const BOARD_SHORTCUTS = [
@@ -22,15 +12,6 @@
     { key: 'v', action: 'toggle-view', label: 'Switch board / calendar' },
     { key: 'm', action: 'board-menu', label: 'Open board menu' }
   ];
-  const BACKGROUNDS = [
-    'linear-gradient(135deg,#0c66e4,#5e4db2)',
-    'linear-gradient(135deg,#1f845a,#0c66e4)',
-    'linear-gradient(135deg,#c25100,#ae2e24)',
-    'linear-gradient(135deg,#943d73,#5e4db2)',
-    'linear-gradient(135deg,#206a83,#1f845a)',
-    'linear-gradient(135deg,#505f79,#172b4d)',
-    '#0c66e4', '#1f845a', '#ae2e24', '#5e4db2', '#37474f'
-  ];
   const LOGO = '<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="kanbaya-k" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d7ff70"/><stop offset=".52" stop-color="#48db9a"/><stop offset="1" stop-color="#00a98f"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="#073b2a"/><path d="M14 10h11v18L43 10h14L35 30l23 24H43L25 36v18H14z" fill="url(#kanbaya-k)"/></svg>';
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -40,130 +21,17 @@
     const n = parseInt(hex.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
     return (r * 299 + g * 587 + b * 114) / 1000 > 155 ? '#172b4d' : '#ffffff';
   };
-  const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
-  const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-  const fmtDate = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }); };
-  function advanceDate(s, recurrence) {
-    const [y, m, d] = s.split('-').map(Number);
-    if (recurrence === 'daily') return new Date(y, m - 1, d + 1);
-    if (recurrence === 'weekly') return new Date(y, m - 1, d + 7);
-    return new Date(y, m, Math.min(d, new Date(y, m + 1, 0).getDate()));
-  }
-  const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  function welcomeDates(created) {
-    const date = new Date(created);
-    if (!Number.isFinite(date.getTime())) throw new Error('The sample board has an invalid creation date.');
-    const year = date.getFullYear(), month = date.getMonth();
-    return Object.fromEntries(Object.keys(WELCOME_PRIORITIES).map((title, index) => {
-      const [start, end] = WELCOME_DAY_RANGES[index];
-      return [title, { startDate: dateKey(new Date(year, month, start)), due: dateKey(new Date(year, month, end)) }];
-    }));
-  }
-  const dateOrdinal = value => {
-    const [year, month, day] = value.split('-').map(Number);
-    const date = new Date(0);
-    date.setUTCFullYear(year, month - 1, day);
-    return date.getTime() / 86400000;
-  };
-  const shiftDate = (value, days) => new Date((dateOrdinal(value) + days) * 86400000).toISOString().slice(0, 10);
-  const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && shiftDate(value, 0) === value;
-
-  /* ---------------- Modelo ---------------- */
-  const mkLabels = () => PALETTE.slice(0, 6).map(color => ({ id: uid(), name: '', color }));
-  const mkList = name => ({ id: uid(), name, theme: '', cards: [] });
-  const mkCard = title => ({ id: uid(), title, desc: '', labels: [], due: '', dueDone: false, priority: '', completed: false, recurrence: '', theme: '', checklist: [], comments: [], archived: false, created: Date.now() });
-  const mkBoard = (name, bg = 0, withLists = true) => ({
-    id: uid(), name, bg, bgColor: '', created: Date.now(), favorite: false, labels: mkLabels(),
-    lists: withLists ? ['To do', 'In progress', 'Done'].map(mkList) : []
-  });
-
-  function normBoard(b) {
-    if (!b || typeof b !== 'object') return null;
-    const arr = x => (Array.isArray(x) ? x : []);
-    if (arr(b.lists).some(list => list?.wipLimit !== undefined && (!Number.isSafeInteger(list.wipLimit) || list.wipLimit < 0))) {
-      throw new Error('WIP limits must be non-negative integers.');
-    }
-    const labels = arr(b.labels).map(l => ({
-      id: String(l?.id || uid()), name: String(l?.name || '').slice(0, 60),
-      color: /^#[0-9a-f]{6}$/i.test(l?.color) ? l.color : PALETTE[5]
-    }));
-    const lists = arr(b.lists).map(l => ({
-      id: String(l?.id || uid()), name: String(l?.name || 'List').slice(0, 100), theme: /^#[0-9a-f]{6}$/i.test(l?.theme) ? l.theme : '',
-      ...(l?.collapsed ? { collapsed: true } : {}),
-      ...(l?.wipLimit !== undefined ? { wipLimit: l.wipLimit } : {}),
-      cards: arr(l?.cards).map(c => {
-        if (c?.startDate && (!validDate(c.startDate) || (c?.due && c.startDate > c.due))) throw new Error('Invalid card date range.');
-        return {
-          id: String(c?.id || uid()), title: String(c?.title || 'Untitled').slice(0, 500), desc: String(c?.desc || ''),
-          labels: arr(c?.labels).map(String),
-          due: /^\d{4}-\d{2}-\d{2}$/.test(c?.due) ? c.due : '', dueDone: !!c?.dueDone,
-          ...(c?.startDate ? { startDate: c.startDate } : {}),
-          priority: PRIORITIES.some(p => p.value === c?.priority) ? c.priority : '', completed: !!c?.completed,
-          checklist: arr(c?.checklist).map(i => ({ id: String(i?.id || uid()), text: String(i?.text || ''), done: !!i?.done })),
-          comments: arr(c?.comments).map(x => ({ id: String(x?.id || uid()), text: String(x?.text || '').slice(0, 2000), created: Number(x?.created) || Date.now() })),
-          recurrence: ['daily', 'weekly', 'monthly'].includes(c?.recurrence) ? c.recurrence : '',
-          theme: /^#[0-9a-f]{6}$/i.test(c?.theme) ? c.theme : '',
-          ...(Array.isArray(c?.imageIds) ? { imageIds: c.imageIds.map(String), coverImageId: c.imageIds.includes(c.coverImageId) ? c.coverImageId : null } : {}),
-          archived: !!c?.archived, created: Number(c?.created) || Date.now()
-        };
-      })
-    }));
-    return {
-      id: String(b.id || uid()), name: String(b.name || 'Board').slice(0, 100),
-      bg: Number.isInteger(b.bg) && BACKGROUNDS[b.bg] ? b.bg : 0, bgColor: /^#[0-9a-f]{6}$/i.test(b.bgColor) ? b.bgColor : '', created: Number(b.created) || Date.now(), favorite: !!b.favorite, labels, lists
-    };
-  }
-
-  // Devuelve una copia con todos los ids nuevos.
-  function reid(b) {
-    const c = JSON.parse(JSON.stringify(b));
-    const map = {};
-    c.id = uid();
-    c.labels.forEach(l => { const n = uid(); map[l.id] = n; l.id = n; });
-    c.lists.forEach(l => {
-      l.id = uid();
-      l.cards.forEach(card => {
-        card.id = uid();
-        card.labels = card.labels.map(id => map[id]).filter(Boolean);
-        card.checklist.forEach(i => { i.id = uid(); });
-        (card.comments || []).forEach(x => { x.id = uid(); });
-      });
-    });
-    return c;
-  }
-
-  function seed() {
-    const b = mkBoard('My first board', 0, true);
-    const [todo, doing, done] = b.lists;
-    b.labels[0].name = 'Easy'; b.labels[3].name = 'Urgent'; b.labels[5].name = 'Idea';
-    const c1 = mkCard('👋 Welcome: drag this card to another list');
-    c1.priority = WELCOME_PRIORITIES[c1.title];
-    c1.labels = [b.labels[5].id];
-    c1.desc = 'You can drag cards between lists and reorder lists by dragging their headers.\nOn mobile, press and hold briefly before dragging.';
-    const c2 = mkCard('Click a card to view its details');
-    c2.priority = WELCOME_PRIORITIES[c2.title];
-    c2.checklist = [{ id: uid(), text: 'Add a label', done: true }, { id: uid(), text: 'Set a due date', done: false }, { id: uid(), text: 'Write a description', done: false }];
-    const c3 = mkCard('Create your own board with "＋ Create"');
-    c3.priority = WELCOME_PRIORITIES[c3.title];
-    c3.labels = [b.labels[0].id];
-    const c4 = mkCard('Your data is saved only in this browser');
-    c4.priority = WELCOME_PRIORITIES[c4.title];
-    c4.desc = 'Use the ⋯ menu in the top corner to export a backup.';
-    c4.labels = [b.labels[3].id];
-    const c5 = mkCard('Install the app (browser menu → Install)');
-    c5.priority = WELCOME_PRIORITIES[c5.title];
-    const dates = welcomeDates(b.created);
-    [c1, c2, c3, c4, c5].forEach(card => Object.assign(card, dates[card.title]));
-    todo.cards.push(c1, c2, c3); doing.cards.push(c4); done.cards.push(c5);
-    return { version: 2, theme: 'auto', boards: [b], templates: [] };
-  }
+  const {
+    PALETTE, PRIORITIES, WELCOME_PRIORITIES, BACKGROUNDS, uid, todayStr, fmtDate,
+    advanceDate, dateKey, welcomeDates, dateOrdinal, shiftDate, validDate,
+    mkList, mkCard, mkBoard, normBoard, reid, seed
+  } = KanbayaModel;
 
   const store = new KanbayaStore();
   let state = { version: 2, theme: 'auto', boards: [], templates: [] };
   const ui = { q: '', boardQuery: '', filters: { status: [], due: [], labels: [] }, filterOpen: false, emojiOpen: false, emojiTarget: null, view: 'board', month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), composer: null, addingList: false, modal: null, focus: null, scrollBottom: null, scrollRight: false };
-  let descriptionDraft = null;
-  const hasDescriptionChanges = () => descriptionDraft && descriptionDraft.text !== descriptionDraft.original;
-  let saveT = null, toastT = null, drag = null, timelineDrag = null, suppressClick = 0, renderCount = 0, menuEl = null, lastBoardId = null;
+  const hasDescriptionChanges = () => editor.hasChanges();
+  let saveT = null, toastT = null, drag = null, suppressClick = 0, renderCount = 0, lastBoardId = null;
   let storageUsage = null;
   let openBoards = [];
 
@@ -184,10 +52,10 @@
       try {
         const persisted = await store.exportBackup();
         download(`kanbaya-recovery-${todayStr()}.${persisted.extension}`, persisted.blob);
-        download(`kanbaya-partial-draft-${todayStr()}.json`, JSON.stringify({ warning: 'Contains only loaded records and pending changes; this is not a complete backup.', state, descriptionDraft }));
+        download(`kanbaya-partial-draft-${todayStr()}.json`, JSON.stringify({ warning: 'Contains only loaded records and pending changes; this is not a complete backup.', state, descriptionDraft: editor.draft }));
       } catch (recoveryError) {
         console.error('Kanbaya: recovery', recoveryError);
-        download('kanbaya-partial-draft.json', JSON.stringify({ warning: 'IndexedDB unavailable; partial draft, not a complete backup.', state, descriptionDraft }));
+        download('kanbaya-partial-draft.json', JSON.stringify({ warning: 'IndexedDB unavailable; partial draft, not a complete backup.', state, descriptionDraft: editor.draft }));
         toast('Only the partial draft could be recovered.');
       }
     };
@@ -246,7 +114,7 @@
                 const card = await store.card(cur().id, ui.modal.id);
                 cur().lists.find(list => list.id === card.listId)?.cards.push(card);
                 store.adopt(state);
-              } else { ui.modal = null; descriptionDraft = null; }
+              } else { ui.modal = null; editor.clear(); }
             }
             running = false; renderPending = false; render(); toast(error.message);
           } catch (reloadError) { storageError(reloadError); }
@@ -269,71 +137,22 @@
   const cur = () => route().board;
   const findCard = (b, id) => { for (const l of b.lists) { const c = l.cards.find(c => c.id === id); if (c) return { list: l, card: c }; } return null; };
   const ctxCard = () => { const b = cur(); const f = b && ui.modal?.type === 'card' ? findCard(b, ui.modal.id) : null; return f ? { b, ...f } : null; };
-  const isImage = attachment => !!attachment && attachment.kind !== 'file' && attachment.mime?.startsWith('image/');
-  const descriptionImagePattern = /!\[([^\]\n]*)\]\(attachment:([\w-]+)\)/g;
-  function descriptionHTML(card, attachments, text = card.desc) {
-    const renderer = new marked.Renderer();
-    renderer.html = token => esc(token.text);
-    renderer.image = ({ href, text, title }) => {
-      if (href.startsWith('attachment:')) {
-        const id = href.slice('attachment:'.length);
-        const image = attachments?.find(item => item.id === id);
-        return card.imageIds?.includes(id) && isImage(image)
-          ? `<img data-image-id="${esc(id)}" alt="${esc(text)}" class="description-image">`
-          : `<span class="muted">[Image unavailable: ${esc(text)}]</span>`;
-      }
-      if (!/^https?:\/\//i.test(href)) return esc(text);
-      return `<img src="${esc(href)}" alt="${esc(text)}"${title ? ` title="${esc(title)}"` : ''} class="description-image" loading="lazy" referrerpolicy="no-referrer">`;
-    };
-    renderer.link = function ({ href, title, tokens }) {
-      const label = this.parser.parseInline(tokens);
-      let url;
-      try { url = new URL(href, location.href); }
-      catch { return label; }
-      if (!['http:', 'https:', 'mailto:'].includes(url.protocol)) return label;
-      return `<a href="${esc(url.href)}"${title ? ` title="${esc(title)}"` : ''} target="_blank" rel="noopener noreferrer">${label}</a>`;
-    };
-    return DOMPurify.sanitize(marked.parse(text, { renderer, gfm: true, breaks: false }), {
-      USE_PROFILES: { html: true }, ADD_ATTR: ['data-image-id', 'target', 'referrerpolicy']
-    });
-  }
-  function updateDescriptionPreview() {
-    const context = ctxCard(), preview = $('.description-preview');
-    if (context && preview && descriptionDraft) preview.innerHTML = descriptionHTML(context.card, ui.modal.images, descriptionDraft.text);
-  }
-  async function discardDescription() {
-    if (hasDescriptionChanges() && !await confirmAction('Discard unsaved description changes?', 'Discard')) return false;
-    descriptionDraft = null;
-    return true;
-  }
+  const { isImage, prepareAttachment } = KanbayaAttachments;
+  const dialogs = KanbayaDialogs.create({ $, esc, execute: run });
+  const { appDialog, confirmAction, promptAction, attachmentURLDialog, mergeConflictDialog, openMenu, closeMenu } = dialogs;
 
-  async function prepareImage(file) {
-    if (!file.type.startsWith('image/')) throw new Error('Choose a valid image file.');
-    let bitmap;
-    try { bitmap = await createImageBitmap(file); }
-    catch { throw new Error('This image format is not supported or the file is damaged.'); }
-    try {
-      const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('Image processing is not available in this browser.');
-      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', 0.75));
-      if (!blob) throw new Error('Could not compress the image.');
-      return { kind: 'image', blob, mime: blob.type, size: blob.size, width: canvas.width, height: canvas.height };
-    } finally { bitmap.close(); }
-  }
+  const editor = KanbayaDescriptionEditor.create({
+    $, esc, isImage, confirmAction, getContext: ctxCard, getAttachments: () => ui.modal?.images,
+    render, save, focus: selector => { ui.focus = selector; }, rememberEmojiTarget, notify: toast
+  });
+  const { descriptionHTML, descriptionEditor, updateDescriptionPreview, discardDescription } = editor;
+  const timelineView = KanbayaTimeline.create({
+    $, esc, getBoardId: () => cur()?.id, blocked: () => !!(drag || queued || ui.modal),
+    execute: run, commitDates: commitTimelineDates, render, notify: toast,
+    suppressClicks: () => { suppressClick = Date.now() + 300; },
+    refresh: () => refreshExternal().catch(storageError)
+  });
 
-  async function prepareAttachment(file) {
-    if (file.type.startsWith('image/')) return prepareImage(file);
-    const blob = await new Response(file.stream().pipeThrough(new CompressionStream('gzip'))).blob();
-    return {
-      kind: 'file', compression: 'gzip', originalSize: file.size,
-      blob, mime: file.type.split(';')[0].trim() || 'application/octet-stream', size: blob.size
-    };
-  }
   async function addAttachments(files, context) {
     if (!context || !files.length) return;
     const status = $('.image-status');
@@ -375,47 +194,7 @@
     return copy;
   }
 
-  const imageElements = new Map();
-  function imagePreviewError(el, error) {
-    if (!el.isConnected) return;
-    console.error('Kanbaya: image preview', error);
-    el.alt = 'Image unavailable';
-    toast(`Could not display image: ${error.message}`);
-  }
-  const imageObserver = new IntersectionObserver(entries => {
-    for (const entry of entries) {
-      if (!entry.isIntersecting) continue;
-      const el = entry.target, record = imageElements.get(el);
-      imageObserver.unobserve(el);
-      if (!record) continue;
-      store.db.images.get(el.dataset.imageId).then(image => {
-        if (!el.isConnected || imageElements.get(el) !== record) return;
-        if (!isImage(image)) throw new Error('An attached image is missing.');
-        record.url = URL.createObjectURL(image.blob);
-        el.onerror = () => {
-          if (record.url) URL.revokeObjectURL(record.url);
-          record.url = null;
-          imagePreviewError(el, new Error('The saved image cannot be decoded.'));
-        };
-        el.src = record.url;
-      }).catch(error => imagePreviewError(el, error));
-    }
-  }, { rootMargin: '100px' });
-  function syncImages() {
-    for (const [el, record] of imageElements) {
-      if (el.isConnected) continue;
-      imageObserver.unobserve(el);
-      if (record.url) URL.revokeObjectURL(record.url);
-      imageElements.delete(el);
-    }
-    for (const el of $$('img[data-image-id]')) {
-      if (imageElements.has(el)) continue;
-      imageElements.set(el, { url: null });
-      imageObserver.observe(el);
-    }
-  }
-  new MutationObserver(syncImages).observe($('#app'), { childList: true, subtree: true });
-  new MutationObserver(syncImages).observe($('#modal-root'), { childList: true, subtree: true });
+  KanbayaAttachments.observePreviews({ readImage: id => store.db.images.get(id), notify: toast, queryAll: $$, roots: [$('#app'), $('#modal-root')] });
 
   function rememberEmojiTarget(el) {
     if (!el || !ui.modal || ui.modal.type !== 'card') return;
@@ -429,7 +208,7 @@
     target.start = Number.isInteger(el.selectionStart) ? el.selectionStart : el.value.length;
     target.end = Number.isInteger(el.selectionEnd) ? el.selectionEnd : target.start;
     ui.emojiTarget = target;
-    if (target.kind === 'desc' && descriptionDraft) descriptionDraft.selection = { start: target.start, end: target.end };
+    if (target.kind === 'desc') editor.rememberSelection(target.start, target.end);
   }
 
   function emojiTargetElement() {
@@ -624,7 +403,7 @@
         <button class="btn sm" data-act="board-menu">☰ Menu</button>
         ${ui.filterOpen ? filterPanelHTML(b) : ''}
       </div>
-      ${ui.view === 'calendar' ? calendarHTML(b) : ui.view === 'timeline' ? timelineHTML() : `<div class="board-scroll"><div class="lists">${listsHTML(b)}</div></div>`}</main>`;
+      ${ui.view === 'calendar' ? calendarHTML(b) : ui.view === 'timeline' ? timelineView.html(ui.month) : `<div class="board-scroll"><div class="lists">${listsHTML(b)}</div></div>`}</main>`;
   }
 
   function filterPanelHTML(b) {
@@ -652,44 +431,6 @@
       return `<div class="cal-day ${d.getMonth() !== m ? 'outside' : ''} ${key === todayStr() ? 'today' : ''}"><span class="cal-num">${d.getDate()}</span><div class="cal-events" data-virtual-day="${key}"></div></div>`;
     }).join('');
     return `<section class="calendar"><div class="calendar-head"><button class="btn" data-act="month-prev" aria-label="Previous month">‹</button><h2>${month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2><button class="btn" data-act="month-next" aria-label="Next month">›</button><button class="btn sm" data-act="month-today">Today</button></div><div class="calendar-grid"><div class="cal-week">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(x => `<strong>${x}</strong>`).join('')}</div><div class="cal-cells">${cells}</div></div></section>`;
-  }
-
-  const TIMELINE_DAY_WIDTH = 36;
-  function timelineHTML() {
-    const month = ui.month, y = month.getFullYear(), m = month.getMonth();
-    const days = new Date(y, m + 1, 0).getDate();
-    const first = dateKey(new Date(y, m, 1));
-    const headers = Array.from({ length: days }, (_, index) => {
-      const date = new Date(y, m, index + 1);
-      return `<span class="${dateKey(date) === todayStr() ? 'today' : ''}">${index + 1}</span>`;
-    }).join('');
-    return `<section class="timeline" aria-label="Board timeline">
-      <div class="calendar-head"><button class="btn" data-act="month-prev" aria-label="Previous month">‹</button><h2>${month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2><button class="btn" data-act="month-next" aria-label="Next month">›</button><button class="btn sm" data-act="month-today">Today</button></div>
-      <p class="timeline-help">Drag a bar to move dates or drag its ends to resize. Double-click a bar to open its card. Open a card to edit dates with the keyboard.</p>
-      <div class="timeline-scroll"><div class="timeline-table" style="--timeline-width:${days * TIMELINE_DAY_WIDTH}px">
-        <div class="timeline-header"><span>Card</span><div class="timeline-days">${headers}</div></div>
-        <div class="timeline-window" data-timeline-first="${first}" data-timeline-days="${days}"></div>
-      </div></div>
-      <h3>Unscheduled cards</h3><div class="timeline-unscheduled"></div>
-    </section>`;
-  }
-
-  function timelineRowHTML(b, c, first, days) {
-    const start = c.startDate || c.due, end = c.due || c.startDate;
-    const left = Math.max(0, dateOrdinal(start) - dateOrdinal(first));
-    const right = Math.min(days - 1, dateOrdinal(end) - dateOrdinal(first));
-    const milestone = !c.startDate || !c.due;
-    const list = b.lists.find(l => l.id === c.listId);
-    const priority = PRIORITIES.find(p => p.value === c.priority);
-    return `<div class="timeline-row" data-virtual-id="${esc(c.id)}" tabindex="-1">
-      <button class="timeline-card" data-act="open-card" data-id="${esc(c.id)}" title="${esc(c.title)} — ${esc(list?.name || '')}"><strong>${esc(c.title)}</strong><small>${esc(list?.name || '')}</small></button>
-      <div class="timeline-track" style="--timeline-days:${days}">
-        <div class="timeline-bar ${milestone ? 'milestone' : ''} ${c.completed ? 'done' : ''} ${priority?.value ? `priority-${priority.value}` : ''}" style="left:${left * TIMELINE_DAY_WIDTH}px;width:${(right - left + 1) * TIMELINE_DAY_WIDTH}px" data-timeline-id="${esc(c.id)}" data-start="${esc(c.startDate || '')}" data-due="${esc(c.due || '')}" title="${esc(start)}${start === end ? '' : ' – ' + esc(end)}">
-          ${!milestone && start >= first ? '<span class="timeline-handle start" data-timeline-handle="start"></span>' : ''}
-          <span class="timeline-bar-label">${milestone ? '◆' : esc(c.title)}</span>
-          ${!milestone && dateOrdinal(end) < dateOrdinal(first) + days ? '<span class="timeline-handle end" data-timeline-handle="end"></span>' : ''}
-        </div>
-      </div></div>`;
   }
 
   function captureScroll() {
@@ -723,7 +464,7 @@
   function render() {
     if (!ready || failed) return;
     if (running) { renderPending = true; return; }
-    if (drag?.active || timelineDrag?.active) return;
+    if (drag?.active || timelineView.isActive()) return;
     windows.forEach(w => w.destroy()); windows = [];
     viewGeneration++;
     renderCount++;
@@ -805,7 +546,7 @@
           rowsByHost.set(host, rows); attach([...rowsByHost.values()].flat());
           if (drag?.active && drag.card) $$('[data-act="open-card"]', host).filter(el => el.dataset.id === drag.card.id).forEach(el => el.classList.add('drag-hidden'));
         },
-        paused: () => !valid() || !!timelineDrag?.active,
+        paused: () => !valid() || timelineView.isActive(),
         afterLayout: () => { if (drag?.active) reorder(); },
         error: storageError
       });
@@ -835,7 +576,7 @@
       const last = shiftDate(first, dayCount - 1);
       const scheduled = keys.filter(k => (k.startDate || k.due) && (k.startDate || k.due) <= last && (k.due || k.startDate) >= first);
       const undated = keys.filter(k => !k.startDate && !k.due);
-      if (scheduled.length) await make(timeline, scheduled, 'timeline:' + first, c => timelineRowHTML(b, c, first, dayCount), 44);
+      if (scheduled.length) await make(timeline, scheduled, 'timeline:' + first, c => timelineView.rowHTML(b, c, first, dayCount), 44);
       else timeline.innerHTML = '<p class="timeline-empty">No cards scheduled in this month.</p>';
       if (undated.length) await make(unscheduled, undated, 'timeline:unscheduled', c => `<div class="timeline-undated-row" data-virtual-id="${esc(c.id)}" tabindex="-1"><button class="timeline-card" data-act="open-card" data-id="${esc(c.id)}"><strong>${esc(c.title)}</strong><small>${esc(b.lists.find(l => l.id === c.listId)?.name || '')}</small></button></div>`, 44);
       else unscheduled.innerHTML = '<p class="timeline-empty">No unscheduled cards.</p>';
@@ -877,51 +618,6 @@
       <div class="actions"><button class="btn" data-act="close-modal">Cancel</button><button class="btn primary" data-act="create-board">Create board</button></div>`, 'narrow');
   }
 
-  function descriptionEditor(card, attachments) {
-    const draft = descriptionDraft;
-    const tools = [
-      ['heading', 'Heading', 'M4 4v12M14 4v12M4 10h10'],
-      ['bold', 'Bold', 'M6 4h5a3 3 0 0 1 0 6H6V4Zm0 6h6a3 3 0 0 1 0 6H6v-6Z'],
-      ['italic', 'Italic', 'M9 4h6M5 16h6M12 4 8 16'],
-      ['strike', 'Strikethrough', 'M14 5c-1-2-8-2-8 1 0 2 3 3 4 4M6 15c2 2 8 2 8-1M3 10h14'],
-      ['ul', 'Bullet list', 'M8 5h9M8 10h9M8 15h9M3 5h1M3 10h1M3 15h1'],
-      ['ol', 'Numbered list', 'M8 5h9M8 10h9M8 15h9M3 3h1v5M2 11c0-2 3-2 3 0 0 1-3 3-3 4h3'],
-      ['task', 'Task list', 'M8 5h9M8 14h9M2 4l2 2 3-4M2 11h4v5H2z'],
-      ['quote', 'Quote', 'M4 5h5v5H4zM4 10c0 3 1 4 3 5M12 5h5v5h-5zM12 10c0 3 1 4 3 5'],
-      ['code', 'Inline code', 'm6 6-4 4 4 4m8-8 4 4-4 4M12 4 8 16'],
-      ['codeblock', 'Code block', 'M7 3H5v5l-2 2 2 2v5h2M13 3h2v5l2 2-2 2v5h-2'],
-      ['link', 'Insert link', 'm8 6 2-2a4 4 0 0 1 6 6l-2 2M6 8l-2 2a4 4 0 0 0 6 6l2-2M7 13l6-6'],
-      ['image', 'Insert attached image', 'M3 3h14v14H3zM3 14l4-4 3 3 3-5 4 6M7 6h.01'],
-      ['table', 'Insert table', 'M3 3h14v14H3zM3 8h14M8 3v14M3 12h14M12 8v9'],
-      ['rule', 'Horizontal rule', 'M3 10h14']
-    ];
-    return `<div class="description-editor">
-      <div class="description-toolbar" role="toolbar" aria-label="Markdown formatting">${tools.map(([format, label, path], index) => `${[4, 8, 10].includes(index) ? '<span class="editor-separator" aria-hidden="true"></span>' : ''}<button type="button" class="editor-tool" data-act="${format === 'image' ? 'toggle-description-images' : 'format-description'}" ${format === 'image' ? `aria-expanded="${!!draft.imagePicker}" aria-controls="description-image-picker"` : `data-format="${format}"`} aria-label="${label}" title="${label}" ${draft.preview ? 'disabled' : ''}><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${path}"/></svg></button>`).join('')}
-        <button class="editor-tool editor-preview" data-act="preview-description" aria-pressed="${draft.preview}">${draft.preview ? 'Write' : 'Preview'}</button>
-      <div id="description-image-picker" class="description-picker" role="region" aria-label="Attached images" ${!draft.imagePicker || draft.preview ? 'hidden' : ''}>
-        <div class="description-picker-heading"><span>Insert attached image</span><button type="button" class="editor-tool" data-act="toggle-description-images" aria-label="Close image picker">&times;</button></div>
-        <div class="description-image-options">${(attachments || []).filter(isImage).map(image => `<button class="btn" data-act="insert-description-image" data-image-id="${esc(image.id)}"><img data-image-id="${esc(image.id)}" alt="" draggable="false"><span>${esc(image.name)}</span></button>`).join('') || '<p class="muted">Upload an image in Attachments first.</p>'}</div>
-      </div></div>
-      <textarea data-f="desc" placeholder="Write a description using Markdown..." aria-label="Description" ${draft.preview ? 'hidden' : ''}>${esc(draft.text)}</textarea>
-      ${draft.preview ? `<div class="description-preview markdown-body" data-act="preview-description" aria-label="Description preview">${descriptionHTML(card, attachments, draft.text)}</div>` : ''}
-    </div>
-    <div class="description-actions"><button class="btn primary" data-act="save-description">Save description</button><button class="btn" data-act="cancel-description">Cancel</button>
-      <details class="markdown-help"><summary>Formatting guide</summary><p>Markdown supports headings, paragraphs, **bold**, *italic*, ~~strikethrough~~, links, images, lists, task lists, quotes, tables, horizontal rules and fenced code blocks.</p><pre># Heading
-**bold** and *italic*
-[Link](https://example.com)
-- Item
-- [ ] Task
-&gt; Quote
-\`inline code\`
-\`\`\`js
-const answer = 42;
-\`\`\`
-| Column | Value |
-| --- | --- |
-| Item | Text |</pre><p>Use Preview to see the result. HTML is displayed as text, not executed. Ctrl+Enter (or Cmd+Enter) saves; Escape cancels editing.</p></details>
-    </div>`;
-  }
-
   function cardModal(b, m) {
     const f = findCard(b, m.id); if (!f) return '';
     const { list, card: c } = f;
@@ -949,8 +645,8 @@ const answer = 42;
           <!-- Repeat task is temporarily unavailable; existing recurrence settings remain unchanged.
           <label class="recurrence-row">Repeat task<select data-f="recurrence"><option value="" ${!c.recurrence ? 'selected' : ''}>Does not repeat</option><option value="daily" ${c.recurrence === 'daily' ? 'selected' : ''}>Every day</option><option value="weekly" ${c.recurrence === 'weekly' ? 'selected' : ''}>Every week</option><option value="monthly" ${c.recurrence === 'monthly' ? 'selected' : ''}>Every month</option></select></label> -->
           <section class="description-section" aria-label="Card description">
-            <div class="description-heading"><h4>Description</h4>${descriptionDraft?.cardId === c.id && descriptionDraft.boardId === b.id ? '' : '<button class="btn sm" data-act="edit-description">Edit description</button>'}</div>
-            ${descriptionDraft?.cardId === c.id && descriptionDraft.boardId === b.id ? descriptionEditor(c, m.images) : `<div class="description-view markdown-body" data-act="edit-description" aria-label="Description">${c.desc ? descriptionHTML(c, m.images) : '<p class="muted">Add a more detailed description...</p>'}</div>`}
+            <div class="description-heading"><h4>Description</h4>${editor.draft?.cardId === c.id && editor.draft.boardId === b.id ? '' : '<button class="btn sm" data-act="edit-description">Edit description</button>'}</div>
+            ${editor.draft?.cardId === c.id && editor.draft.boardId === b.id ? descriptionEditor(c, m.images) : `<div class="description-view markdown-body" data-act="edit-description" aria-label="Description">${c.desc ? descriptionHTML(c, m.images) : '<p class="muted">Add a more detailed description...</p>'}</div>`}
           </section>
           <section class="card-images" aria-label="Attachments">
             <h4>Attachments</h4>
@@ -1170,108 +866,6 @@ const answer = 42;
     render();
   }
 
-  function appDialog(message, { confirmLabel = 'Confirm', value, maxLength, validate } = {}) {
-    return new Promise(resolve => {
-      const previousFocus = document.activeElement;
-      const dialog = document.createElement('dialog');
-      dialog.className = 'modal narrow app-dialog';
-      dialog.setAttribute('aria-labelledby', 'app-dialog-title');
-      dialog.innerHTML = `<form method="dialog">
-        <h3 id="app-dialog-title">${value === undefined ? 'Confirm action' : esc(message)}</h3>
-        ${value === undefined ? `<p>${esc(message)}</p>` : `<label for="app-dialog-input">${esc(message)}</label><input id="app-dialog-input" type="text" maxlength="${maxLength}" value="${esc(value)}">`}
-        <div class="actions"><button type="button" class="btn" value="cancel">Cancel</button><button class="btn primary" value="confirm">${esc(confirmLabel)}</button></div>
-      </form>`;
-      $('button[value="cancel"]', dialog).addEventListener('click', () => dialog.close());
-      if (validate) {
-        const input = $('#app-dialog-input', dialog);
-        input.addEventListener('input', () => input.setCustomValidity(''));
-        $('form', dialog).addEventListener('submit', event => {
-          input.setCustomValidity(validate(input.value));
-          if (!input.reportValidity()) event.preventDefault();
-        });
-      }
-      dialog.addEventListener('click', event => event.stopPropagation());
-      dialog.addEventListener('keydown', event => event.stopPropagation());
-      dialog.addEventListener('close', () => {
-        const result = dialog.returnValue === 'confirm' ? (value === undefined ? true : $('#app-dialog-input', dialog).value) : (value === undefined ? false : null);
-        dialog.remove();
-        if (previousFocus?.isConnected && !previousFocus.closest('[inert]')) previousFocus.focus({ preventScroll: true });
-        resolve(result);
-      }, { once: true });
-      document.body.append(dialog);
-      dialog.showModal();
-      const focus = value === undefined ? $('button[value="cancel"]', dialog) : $('#app-dialog-input', dialog);
-      focus.focus();
-      if (value !== undefined) focus.select();
-    });
-  }
-  const confirmAction = (message, label = 'Delete') => appDialog(message, { confirmLabel: label });
-  const promptAction = (message, value, maxLength) => appDialog(message, { confirmLabel: 'Save', value, maxLength });
-
-  function attachmentURLDialog() {
-    return new Promise(resolve => {
-      const previousFocus = document.activeElement;
-      const dialog = document.createElement('dialog');
-      dialog.className = 'modal narrow app-dialog attachment-url-dialog';
-      dialog.setAttribute('aria-labelledby', 'attachment-url-title');
-      dialog.innerHTML = `<form method="dialog">
-        <h3 id="attachment-url-title">Add attachment from web</h3>
-        <label for="attachment-url-input">Attachment URL</label>
-        <input id="attachment-url-input" class="field" type="text" inputmode="url" autocomplete="url" placeholder="https://..." aria-label="Attachment URL">
-        <p class="muted image-url-note">The server must allow cross-origin requests (CORS). The file will be saved in this browser.</p>
-        <div class="actions"><button type="button" class="btn" value="cancel">Cancel</button><button class="btn primary" value="confirm">Add attachment</button></div>
-      </form>`;
-      $('button[value="cancel"]', dialog).addEventListener('click', () => dialog.close());
-      dialog.addEventListener('click', event => event.stopPropagation());
-      dialog.addEventListener('keydown', event => event.stopPropagation());
-      dialog.addEventListener('close', () => {
-        const result = dialog.returnValue === 'confirm' ? $('#attachment-url-input', dialog).value : null;
-        dialog.remove();
-        if (previousFocus?.isConnected && !previousFocus.closest('[inert]')) previousFocus.focus({ preventScroll: true });
-        resolve(result);
-      }, { once: true });
-      document.body.append(dialog);
-      dialog.showModal();
-      $('#attachment-url-input', dialog).focus();
-    });
-  }
-
-  /* ---------------- Menús emergentes ---------------- */
-  function closeMenu() { menuEl?.remove(); menuEl = null; }
-  function openMenu(anchor, items) {
-    closeMenu();
-    const m = document.createElement('div'); m.className = 'menu'; m.setAttribute('role', 'menu');
-    items.forEach(it => {
-      if (it.sep) { m.append(document.createElement('hr')); return; }
-      const n = document.createElement(it.href ? 'a' : 'button');
-      n.className = 'menu-item' + (it.danger ? ' danger' : ''); n.setAttribute('role', 'menuitem');
-      if (it.href) n.href = it.href;
-      n.textContent = it.label;
-      if (it.icon) {
-        const icon = document.createElement('span'); icon.className = 'menu-item-icon';
-        icon.setAttribute('aria-hidden', 'true'); icon.textContent = it.icon;
-        n.prepend(icon);
-      }
-      n.addEventListener('click', e => { e.stopPropagation(); closeMenu(); if (it.fn) run(it.fn); });
-      if (it.close) {
-        const row = document.createElement('div'); row.className = 'menu-tab-row'; row.setAttribute('role', 'none');
-        const button = document.createElement('button');
-        button.type = 'button'; button.className = 'icon-btn'; button.textContent = '✕';
-        button.setAttribute('role', 'menuitem'); button.setAttribute('aria-label', it.closeLabel);
-        button.addEventListener('click', e => { e.stopPropagation(); closeMenu(); run(it.close); });
-        row.append(n, button); m.append(row);
-      } else m.append(n);
-    });
-    document.body.append(m);
-    const r = anchor.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
-    const left = Math.min(Math.max(8, r.left), innerWidth - mw - 8);
-    let top = r.bottom + 4; if (top + mh > innerHeight - 8) top = Math.max(8, r.top - mh - 4);
-    m.style.left = left + 'px'; m.style.top = top + 'px';
-    menuEl = m;
-    $('.menu-item', m)?.focus();
-  }
-  document.addEventListener('pointerdown', e => { if (menuEl && !menuEl.contains(e.target)) closeMenu(); }, true);
-
   /* ---------------- Datos: exportar / importar ---------------- */
   function download(name, text) {
     const url = URL.createObjectURL(text instanceof Blob ? text : new Blob([text], { type: 'application/json' }));
@@ -1300,86 +894,7 @@ const answer = 42;
     const backup = await store.exportBackup(boards.map(b => b.id), includeTemplates);
     download(backupFilename(filename, backup.extension), backup.blob);
   }
-  function mergeConflictDialog(board, conflicts) {
-    return new Promise(resolve => {
-      const previousFocus = document.activeElement;
-      const dialog = document.createElement('dialog');
-      dialog.className = 'modal narrow app-dialog merge-conflict-dialog';
-      dialog.setAttribute('aria-labelledby', 'merge-conflict-title');
-      dialog.innerHTML = `<form method="dialog">
-        <h3 id="merge-conflict-title">Conflicts in ${esc(board.name)}</h3>
-        <p>Both versions contain different changes to this board. Choose which version takes precedence for conflicting board settings, lists and whole cards, including their attachments and lane positions. Items present in only one version are kept.</p>
-        <ul class="merge-conflicts">${conflicts.slice(0, 30).map(conflict => `<li>${esc(conflict)}</li>`).join('')}</ul>
-        ${conflicts.length > 30 ? `<p>And ${conflicts.length - 30} more conflicts.</p>` : ''}
-        <div class="actions"><button value="cancel" class="btn">Cancel import</button><button value="local" class="btn">Keep local version</button><button value="backup" class="btn primary">Use backup version</button></div>
-      </form>`;
-      dialog.addEventListener('click', event => event.stopPropagation());
-      dialog.addEventListener('keydown', event => event.stopPropagation());
-      dialog.addEventListener('close', () => {
-        const result = ['local', 'backup'].includes(dialog.returnValue) ? dialog.returnValue : null;
-        dialog.remove();
-        if (previousFocus?.isConnected && !previousFocus.closest('[inert]')) previousFocus.focus({ preventScroll: true });
-        resolve(result);
-      }, { once: true });
-      document.body.append(dialog);
-      dialog.showModal();
-      $('button[value="cancel"]', dialog).focus();
-    });
-  }
-  const sameValue = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-  const without = (value, ...keys) => Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
-  const differentFields = (a, b) => [...new Set([...Object.keys(a), ...Object.keys(b)])].filter(key => !sameValue(a[key], b[key]));
-  function matchingOrder(a, b) {
-    const aIds = new Set(a.map(item => item.id)), bIds = new Set(b.map(item => item.id));
-    return sameValue(a.filter(item => bIds.has(item.id)).map(item => item.id), b.filter(item => aIds.has(item.id)).map(item => item.id));
-  }
-  function boardConflicts(local, backup) {
-    const conflicts = [];
-    const fields = differentFields(without(local, 'lists', 'labels'), without(backup, 'lists', 'labels'));
-    if (fields.length) conflicts.push(`Board settings: ${fields.join(', ')}.`);
-    if (!matchingOrder(local.labels, backup.labels)) conflicts.push('Label order differs.');
-    if (!matchingOrder(local.lists, backup.lists)) conflicts.push('Lane order differs.');
-    const labels = new Map(local.labels.map(label => [label.id, label]));
-    for (const label of backup.labels) {
-      if (labels.has(label.id) && !sameValue(labels.get(label.id), label)) conflicts.push(`Label "${labels.get(label.id).name}" / "${label.name}" differs.`);
-    }
-    const lists = new Map(local.lists.map(list => [list.id, list]));
-    const cards = new Map(local.lists.flatMap(list => list.cards.map(card => [card.id, { card, list }])));
-    for (const list of backup.lists) {
-      const other = lists.get(list.id);
-      if (other) {
-        const changed = differentFields(without(other, 'cards'), without(list, 'cards'));
-        if (changed.length) conflicts.push(`Lane "${other.name}" / "${list.name}": ${changed.join(', ')}.`);
-        if (!matchingOrder(other.cards, list.cards)) conflicts.push(`Card order in lane "${list.name}" differs.`);
-      }
-      for (const card of list.cards) {
-        const found = cards.get(card.id);
-        if (!found) continue;
-        const changed = differentFields(found.card, card);
-        if (found.list.id !== list.id) changed.push(`lane: "${found.list.name}" → "${list.name}"`);
-        if (changed.length) conflicts.push(`Card "${found.card.title}" / "${card.title}": ${changed.join(', ')}.`);
-      }
-    }
-    return conflicts;
-  }
-  function mergeBoard(preferred, other) {
-    const merged = structuredClone(preferred);
-    const labels = new Set(merged.labels.map(label => label.id));
-    merged.labels.push(...other.labels.filter(label => !labels.has(label.id)));
-    const lists = new Map(merged.lists.map(list => [list.id, list]));
-    const cards = new Set(merged.lists.flatMap(list => list.cards.map(card => card.id)));
-    for (const list of other.lists) {
-      let target = lists.get(list.id);
-      if (!target) {
-        target = { ...structuredClone(list), cards: [] };
-        merged.lists.push(target); lists.set(target.id, target);
-      }
-      for (const card of list.cards) {
-        if (!cards.has(card.id)) { target.cards.push(structuredClone(card)); cards.add(card.id); }
-      }
-    }
-    return merged;
-  }
+  const { boardConflicts, mergeBoard } = KanbayaBackupMerge;
   $('#import-file').addEventListener('change', async e => {
     const file = e.target.files[0]; e.target.value = ''; if (!file) return;
     try {
@@ -1783,86 +1298,7 @@ const answer = 42;
     },
 
     /* tarjetas */
-    'edit-description'() {
-      const context = ctxCard();
-      if (!context) return;
-      descriptionDraft = { boardId: context.b.id, cardId: context.card.id, original: context.card.desc, text: context.card.desc, preview: false };
-      ui.focus = '[data-f="desc"]';
-      render();
-    },
-    'save-description'() {
-      const context = ctxCard();
-      if (!context || descriptionDraft?.cardId !== context.card.id || descriptionDraft.boardId !== context.b.id) return;
-      const text = descriptionDraft.text;
-      context.card.desc = text;
-      save();
-      descriptionDraft = null;
-      ui.focus = '[data-act="edit-description"]';
-      render();
-    },
-    async 'cancel-description'() {
-      if (!await discardDescription()) return;
-      ui.focus = '[data-act="edit-description"]';
-      render();
-    },
-    'preview-description'() {
-      if (!descriptionDraft) return;
-      descriptionDraft.preview = !descriptionDraft.preview;
-      descriptionDraft.imagePicker = false;
-      if (!descriptionDraft.preview) ui.focus = '[data-f="desc"]';
-      render();
-    },
-    'toggle-description-images'() {
-      if (!descriptionDraft || descriptionDraft.preview) return;
-      descriptionDraft.imagePicker = !descriptionDraft.imagePicker;
-      ui.focus = descriptionDraft.imagePicker ? '.description-picker [data-act="insert-description-image"], .description-picker [data-act="toggle-description-images"]' : '[data-act="toggle-description-images"]';
-      render();
-    },
-    'format-description'(el) {
-      const textarea = $('[data-f="desc"]');
-      if (!descriptionDraft || !textarea || descriptionDraft.preview) return;
-      const { start = textarea.value.length, end = start } = descriptionDraft.selection || {};
-      const selected = textarea.value.slice(start, end);
-      const wrappers = { bold: ['**', '**'], italic: ['*', '*'], strike: ['~~', '~~'], code: ['`', '`'], link: ['[', '](https://example.com)'], codeblock: ['\n```\n', '\n```\n'] };
-      const prefixes = { heading: '## ', ul: '- ', ol: '1. ', task: '- [ ] ', quote: '> ' };
-      let text, offset = 0, length = 0;
-      if (wrappers[el.dataset.format]) {
-        const [before, after] = wrappers[el.dataset.format], content = selected || 'text';
-        text = before + content + after; offset = before.length; length = content.length;
-      } else if (prefixes[el.dataset.format]) {
-        const prefix = prefixes[el.dataset.format];
-        text = (start && textarea.value[start - 1] !== '\n' ? '\n' : '') + (selected || 'text').split('\n').map(line => prefix + line).join('\n');
-        offset = text.length; length = 0;
-      } else {
-        text = el.dataset.format === 'table' ? '\n\n| Column | Value |\n| --- | --- |\n| Item | Text |\n\n' : '\n\n---\n\n';
-        offset = text.length;
-      }
-      textarea.setRangeText(text, start, end, 'select');
-      textarea.focus();
-      textarea.setSelectionRange(start + offset, start + offset + length);
-      descriptionDraft.text = textarea.value;
-      rememberEmojiTarget(textarea);
-    },
-    'insert-description-image'(el) {
-      const context = ctxCard(), id = el.dataset.imageId;
-      const image = ui.modal?.images?.find(item => item.id === id);
-      if (!context?.card.imageIds?.includes(id) || !isImage(image)) {
-        toast('Choose an image attached to this card.'); return;
-      }
-      const textarea = $('[data-f="desc"]');
-      if (!descriptionDraft || !textarea) return;
-      const selection = descriptionDraft.selection || { start: textarea.value.length, end: textarea.value.length };
-      const name = String(image.name || 'Image').replace(/[\[\]\r\n]/g, ' ');
-      const token = `![${name}](attachment:${id})`;
-      textarea.setRangeText(token, Math.min(selection.start, textarea.value.length), Math.min(selection.end, textarea.value.length), 'end');
-      descriptionDraft.text = textarea.value;
-      descriptionDraft.imagePicker = false;
-      $('.description-picker').hidden = true;
-      $('[aria-controls="description-image-picker"]').setAttribute('aria-expanded', 'false');
-      updateDescriptionPreview();
-      textarea.focus();
-      rememberEmojiTarget(textarea);
-    },
+    ...editor.actions,
     'image-menu'(el) {
       const context = ctxCard(), id = el.dataset.imageId;
       if (!context?.card.imageIds?.includes(id)) return;
@@ -1929,11 +1365,7 @@ const answer = 42;
       mutate(() => {
         c.imageIds = c.imageIds.filter(imageId => imageId !== id);
         if (c.coverImageId === id) c.coverImageId = ui.modal.images?.find(image => image.id !== id && isImage(image))?.id || null;
-        c.desc = c.desc.replace(descriptionImagePattern, (match, name, imageId) => imageId === id ? '' : match);
-        if (descriptionDraft?.cardId === c.id) {
-          descriptionDraft.text = descriptionDraft.text.replace(descriptionImagePattern, (match, name, imageId) => imageId === id ? '' : match);
-          descriptionDraft.original = c.desc;
-        }
+        editor.removeImageReferences(c, id);
         ui.modal.images = ui.modal.images?.filter(image => image.id !== id);
       }, 'Attachment deleted');
     },
@@ -1986,7 +1418,7 @@ const answer = 42;
       const c = ctxCard()?.card; if (!c) return;
       const name = await promptAction('Template name', c.title, 100);
       if (!name?.trim()) return;
-      state.templates.push({ id: uid(), title: name.trim().slice(0, 100), desc: c.desc.replace(descriptionImagePattern, (match, label) => label), checklist: c.checklist.map(i => i.text) });
+      state.templates.push({ id: uid(), title: name.trim().slice(0, 100), desc: editor.stripImages(c.desc), checklist: c.checklist.map(i => i.text) });
       save(); toast(c.imageIds?.length ? 'Personal template saved (attachments are not included)' : 'Personal template saved');
     },
     'use-template'(el) {
@@ -2080,7 +1512,7 @@ const answer = 42;
   });
   document.addEventListener('dblclick', e => {
     const bar = e.target.closest('.timeline-bar');
-    if (!bar || e.button !== 0 || Date.now() < suppressClick || timelineDrag || drag || ui.modal) return;
+    if (!bar || e.button !== 0 || Date.now() < suppressClick || timelineView.isDragging() || drag || ui.modal) return;
     const card = $('.timeline-card', bar.closest('.timeline-row'));
     if (card) run(() => dispatch('open-card', card, e));
   });
@@ -2109,7 +1541,7 @@ const answer = 42;
     const f = t.dataset?.f; if (!f) return;
     const x = ctxCard();
     if (f === 'title' && x) { x.card.title = t.value; saveSoon(); }
-    else if (f === 'desc' && x && descriptionDraft) { descriptionDraft.text = t.value; rememberEmojiTarget(t); updateDescriptionPreview(); }
+    else if (f === 'desc' && x && editor.draft) { editor.setText(t.value); rememberEmojiTarget(t); updateDescriptionPreview(); }
     else if (f === 'check-text' && x) { const i = x.card.checklist.find(i => i.id === t.dataset.iid); if (i) { i.text = t.value; saveSoon(); } }
     else if (f === 'label-name' || f === 'label-color') {
       const l = cur()?.labels.find(l => l.id === t.dataset.lid); if (!l) return;
@@ -2193,7 +1625,7 @@ const answer = 42;
     const t = e.target;
     if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
     if (ready && !failed && !queued && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey &&
-        cur() && !ui.modal && !menuEl && !drag && !timelineDrag && !ui.composer && !ui.addingList &&
+        cur() && !ui.modal && !dialogs.isMenuOpen() && !drag && !timelineView.isDragging() && !ui.composer && !ui.addingList &&
         !t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')) {
       const shortcut = BOARD_SHORTCUTS.find(shortcut => shortcut.key === e.key.toLowerCase());
       if (shortcut) {
@@ -2206,21 +1638,21 @@ const answer = 42;
         return;
       }
     }
-    if (descriptionDraft && t.matches('[data-f="desc"]') && (e.ctrlKey || e.metaKey)) {
+    if (editor.draft && t.matches('[data-f="desc"]') && (e.ctrlKey || e.metaKey)) {
       if (e.key === 'Enter') { e.preventDefault(); run(() => A['save-description']()); return; }
       const format = { b: 'bold', i: 'italic', k: 'link' }[e.key.toLowerCase()];
       if (format) { e.preventDefault(); run(() => A['format-description']({ dataset: { format } })); return; }
     }
     if (e.key === 'Escape') {
-      if (descriptionDraft?.imagePicker) { e.preventDefault(); run(() => A['toggle-description-images']()); return; }
-      if (timelineDrag) { e.preventDefault(); finishTimelineDrag(false); return; }
+      if (editor.draft?.imagePicker) { e.preventDefault(); run(() => A['toggle-description-images']()); return; }
+      if (timelineView.isDragging()) { e.preventDefault(); timelineView.cancel(); return; }
       if (drag?.active) { endDrag(false); return; }
-      if (menuEl) { closeMenu(); return; }
+      if (dialogs.isMenuOpen()) { closeMenu(); return; }
       if (ui.emojiOpen) { ui.emojiOpen = false; $('.emoji-picker')?.setAttribute('hidden', ''); $('.emoji-trigger')?.setAttribute('aria-expanded', 'false'); return; }
       if (ui.filterOpen) { ui.filterOpen = false; render(); return; }
       if (t.matches('.list-title-input')) { t.dataset.cancel = '1'; t.blur(); return; }
       if (ui.composer || ui.addingList) { ui.composer = null; ui.addingList = false; render(); return; }
-      if (descriptionDraft && ui.modal?.type === 'card') { e.preventDefault(); run(() => A['cancel-description']()); return; }
+      if (editor.draft && ui.modal?.type === 'card') { e.preventDefault(); run(() => A['cancel-description']()); return; }
       if (ui.modal) { e.preventDefault(); run(() => closeModal()); return; }
     } else if (e.key === 'Enter') {
       if (t.matches('.composer textarea') && !e.shiftKey) { e.preventDefault(); run(() => A['save-card']()); }
@@ -2235,13 +1667,13 @@ const answer = 42;
   });
 
   addEventListener('hashchange', () => run(async () => {
-    if (descriptionDraft && location.hash === `#/b/${descriptionDraft.boardId}`) return;
-    if (!await discardDescription()) { location.replace(`#/b/${descriptionDraft.boardId}`); return; }
+    if (editor.draft && location.hash === `#/b/${editor.draft.boardId}`) return;
+    if (!await discardDescription()) { location.replace(`#/b/${editor.draft.boardId}`); return; }
     openBoards = await store.updateOpenBoards({ add: cur()?.id });
     ui.modal = null; ui.q = ''; ui.filters = { status: [], due: [], labels: [] }; ui.filterOpen = false; ui.emojiOpen = false; ui.emojiTarget = null; ui.composer = null; ui.addingList = false; closeMenu(); render();
   }));
   async function refreshExternal() {
-    if (!ready || failed || running || saveT || dirty || drag || timelineDrag || descriptionDraft) return;
+    if (!ready || failed || running || saveT || dirty || drag || timelineView.isDragging() || editor.draft) return;
     const revision = (await store.db.settings.get('revision'))?.value || 0;
     if (revision !== store.revision) {
       await run(async () => {
@@ -2269,89 +1701,28 @@ const answer = 42;
   addEventListener('kanbaya-install-change', () => run(() => render()));
 
   /* ---------------- Cronograma ---------------- */
-  function timelineDates(d, delta) {
-    if (d.mode === 'start') delta = Math.min(delta, dateOrdinal(d.due) - dateOrdinal(d.start));
-    if (d.mode === 'end') delta = Math.max(delta, dateOrdinal(d.start) - dateOrdinal(d.due));
-    return {
-      delta,
-      start: d.start && d.mode !== 'end' ? shiftDate(d.start, delta) : d.start,
-      due: d.due && d.mode !== 'start' ? shiftDate(d.due, delta) : d.due
-    };
-  }
-  function moveTimelinePointer(e) {
-    const d = timelineDrag;
-    if (!d || e.pointerId !== d.id) return;
-    const distance = e.clientX - d.x;
-    if (!d.active && Math.abs(distance) < 5) return;
-    d.active = true;
-    if (e.cancelable) e.preventDefault();
-    const dates = timelineDates(d, Math.round(distance / TIMELINE_DAY_WIDTH));
-    d.delta = dates.delta;
-    if ((dates.start && !validDate(dates.start)) || (dates.due && !validDate(dates.due))) return;
-    const first = dateOrdinal(d.first), start = dateOrdinal(dates.start || dates.due), end = dateOrdinal(dates.due || dates.start);
-    const left = Math.max(0, Math.min(d.days, start - first));
-    const right = Math.max(left, Math.min(d.days, end - first + 1));
-    d.bar.style.left = left * TIMELINE_DAY_WIDTH + 'px';
-    d.bar.style.width = (right - left) * TIMELINE_DAY_WIDTH + 'px';
-    d.bar.classList.add('is-dragging');
-  }
-  function finishTimelineDrag(commit) {
-    const d = timelineDrag;
-    if (!d) return;
-    timelineDrag = null;
-    removeEventListener('pointermove', moveTimelinePointer);
-    removeEventListener('pointerup', timelinePointerUp);
-    removeEventListener('pointercancel', timelinePointerCancel);
-    if (d.bar.hasPointerCapture(d.id)) d.bar.releasePointerCapture(d.id);
-    if (d.active) suppressClick = Date.now() + 300;
-    if (!d.active || !commit || !d.delta) {
-      if (d.active) render();
-      refreshExternal().catch(storageError);
-      return;
+  async function commitTimelineDates(d, dates) {
+    const b = cur();
+    if (!b || b.id !== d.boardId) return;
+    const revision = (await store.db.settings.get('revision'))?.value || 0;
+    if (revision !== store.revision) {
+      state = await store.readState();
+      render(); toast('The board changed in another tab. Please try again.'); return;
     }
-    const dates = timelineDates(d, d.delta);
-    if ((dates.start && !validDate(dates.start)) || (dates.due && !validDate(dates.due))) {
-      render(); toast('The resulting date is outside the supported range.'); return;
+    const c = await store.card(b.id, d.cardId);
+    if ((c.startDate || '') !== d.start || (c.due || '') !== d.due) {
+      render(); toast('The card dates changed. Refresh and try again.'); return;
     }
-    run(async () => {
-      const b = cur();
-      if (!b || b.id !== d.boardId) return;
-      const revision = (await store.db.settings.get('revision'))?.value || 0;
-      if (revision !== store.revision) {
-        state = await store.readState();
-        render(); toast('The board changed in another tab. Please try again.'); return;
-      }
-      const c = await store.card(b.id, d.cardId);
-      if ((c.startDate || '') !== d.start || (c.due || '') !== d.due) {
-        render(); toast('The card dates changed. Refresh and try again.'); return;
-      }
-      const list = b.lists.find(l => l.id === c.listId);
-      if (!list) throw new Error('The card list no longer exists. Refresh the view.');
-      list.cards = list.cards.filter(row => row.id !== c.id);
-      list.cards.push(c);
-      list.cards.sort((a, b) => a._pos - b._pos);
-      store.adopt(state);
-      if (dates.start) c.startDate = dates.start; else delete c.startDate;
-      c.due = dates.due;
-      save(); render();
-    });
+    const list = b.lists.find(l => l.id === c.listId);
+    if (!list) throw new Error('The card list no longer exists. Refresh the view.');
+    list.cards = list.cards.filter(row => row.id !== c.id);
+    list.cards.push(c);
+    list.cards.sort((a, b) => a._pos - b._pos);
+    store.adopt(state);
+    if (dates.start) c.startDate = dates.start; else delete c.startDate;
+    c.due = dates.due;
+    save(); render();
   }
-  function timelinePointerUp(e) { if (timelineDrag && e.pointerId === timelineDrag.id) finishTimelineDrag(true); }
-  function timelinePointerCancel(e) { if (timelineDrag && e.pointerId === timelineDrag.id) finishTimelineDrag(false); }
-  document.addEventListener('pointerdown', e => {
-    const bar = e.target.closest('.timeline-bar'), host = bar?.closest('.timeline-window');
-    if (!bar || !host || timelineDrag || drag || queued || ui.modal || (e.pointerType === 'mouse' && e.button !== 0)) return;
-    const mode = e.target.closest('[data-timeline-handle]')?.dataset.timelineHandle || 'move';
-    timelineDrag = {
-      id: e.pointerId, x: e.clientX, bar, mode, boardId: cur().id, cardId: bar.dataset.timelineId,
-      start: bar.dataset.start, due: bar.dataset.due, first: host.dataset.timelineFirst, days: Number(host.dataset.timelineDays),
-      active: false, delta: 0
-    };
-    bar.setPointerCapture(e.pointerId);
-    addEventListener('pointermove', moveTimelinePointer, { passive: false });
-    addEventListener('pointerup', timelinePointerUp);
-    addEventListener('pointercancel', timelinePointerCancel);
-  });
 
   /* ---------------- Arrastrar y soltar (ratón + táctil) ---------------- */
   function onPointerDown(e) {
