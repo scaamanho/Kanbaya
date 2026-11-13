@@ -151,6 +151,21 @@
         return state;
       });
     }
+    async updateOpenBoards({ add, remove } = {}) {
+      return this.db.transaction('rw', this.db.settings, this.db.boards, async () => {
+        const saved = (await this.db.settings.get('openBoards'))?.value;
+        if (saved !== undefined && (!Array.isArray(saved) || saved.some(id => typeof id !== 'string'))) {
+          throw new Error('The saved open boards are invalid.');
+        }
+        const available = new Set((await this.db.boards.toArray()).map(board => board.id));
+        const ids = [...new Set(saved || [])].filter(id => available.has(id) && id !== remove);
+        if (add && available.has(add) && !ids.includes(add)) ids.push(add);
+        if (JSON.stringify(saved) !== JSON.stringify(ids)) {
+          await this.db.settings.put({ key: 'openBoards', value: ids });
+        }
+        return ids;
+      });
+    }
     summary(row) {
       return {
         ...row, _pos: row.position, _summary: true,

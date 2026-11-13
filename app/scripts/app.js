@@ -165,6 +165,7 @@
   const hasDescriptionChanges = () => descriptionDraft && descriptionDraft.text !== descriptionDraft.original;
   let saveT = null, toastT = null, drag = null, timelineDrag = null, suppressClick = 0, renderCount = 0, menuEl = null, lastBoardId = null;
   let storageUsage = null;
+  let openBoards = [];
 
   let ready = false, failed = false, dirty = false, running = false, renderPending = false;
   let work = Promise.resolve(), queued = 0, undoRequest = null;
@@ -202,6 +203,7 @@
     await store.preparePositions(state);
     const change = await store.commit(state);
     dirty = false;
+    if (openBoards.some(id => !boardById(id))) openBoards = await store.updateOpenBoards();
     if (undoRequest && change) undoRequest.change = change;
     undoRequest = null;
     const metadata = await store.readExportState();
@@ -491,12 +493,20 @@
       <a class="brand" href="#/" aria-label="Home">${LOGO}<span>Kanbaya</span></a>
       <button class="btn ghost" data-act="boards-menu">Boards ▾</button>
       <button class="btn primary sm" data-act="new-board">＋ Create</button>
-      <span class="spacer"></span>
+      ${openBoards.length ? `<nav class="board-tabs" aria-label="Open boards">
+        <div class="board-tabs-scroll">
+          ${openBoards.map(id => boardById(id)).filter(Boolean).map(board => `<div class="board-tab${board.id === cur()?.id ? ' active' : ''}">
+            <a href="#/b/${esc(board.id)}" title="${esc(board.name)}"${board.id === cur()?.id ? ' aria-current="page"' : ''}>${esc(board.name)}</a>
+            <button type="button" class="icon-btn" data-act="close-board-tab" data-id="${esc(board.id)}" aria-label="Close ${esc(board.name)} tab">✕</button>
+          </div>`).join('')}
+        </div>
+        <button type="button" class="icon-btn board-tabs-menu" data-act="open-boards-menu" aria-label="Show open boards" title="Show open boards">▾</button>
+      </nav>` : '<span class="spacer"></span>'}
       <div class="storage-meter" role="group" aria-label="Browser storage">
         <div class="storage-meter-head"><span>Storage</span><span class="storage-value">${usage === null ? 'Checking…' : `${usage}%`}</span></div>
         <div class="storage-track" role="progressbar" aria-label="Storage used" aria-valuemin="0" aria-valuemax="100"${usage === null ? '' : ` aria-valuenow="${usage}" aria-valuetext="${details} (${usage}%)" title="${details} (${usage}%)"`}><span style="width:${usage ?? 0}%"></span></div>
       </div>
-      ${window.kanbayaInstallAvailable ? '<button class="btn ghost sm" type="button" data-install-trigger>⬇ Install</button>' : ''}
+      ${window.kanbayaInstallAvailable ? '<button class="btn ghost sm" type="button" data-install-trigger aria-label="⬇ Install" title="Install">⬇<span class="install-label"> Install</span></button>' : ''}
       <button class="icon-btn" data-act="theme" title="Theme: ${themeName()}" aria-label="Change theme (current: ${themeName()})">${themeIcon()}</button>
       <button class="icon-btn" data-act="data-menu" title="Data" aria-label="Data menu">⋯</button>
     </header>`;
@@ -726,6 +736,8 @@
     const scrollBottom = ui.scrollBottom;
     const s = captureScroll();
     const timelineScroll = lastBoardId === b?.id && $('.timeline') ? { x: $('.timeline-scroll').scrollLeft, y: $('.timeline').scrollTop } : null;
+    const tabsScroll = $('.board-tabs-scroll')?.scrollLeft || 0;
+    const previousActiveTab = $('.board-tab.active a')?.getAttribute('href');
     const search = document.activeElement?.matches('.home-board-search') ? document.activeElement : null;
     const searchSelection = search ? { start: search.selectionStart, end: search.selectionEnd, direction: search.selectionDirection } : null;
     document.title = b ? `${b.name} · Kanbaya` : 'Kanbaya';
@@ -733,6 +745,16 @@
       <span class="product-version">Kanbaya v${PRODUCT_VERSION}</span>
       <a class="support-link" href="https://www.buymeacoffee.com/scaamanho" target="_blank" rel="noopener noreferrer" aria-label="Buy Me a Coffee"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="100" height="30"></a>
     </footer>`);
+    const tabs = $('.board-tabs-scroll');
+    if (tabs) {
+      tabs.scrollLeft = tabsScroll;
+      const active = $('.board-tab.active', tabs);
+      if (active && previousActiveTab !== $('a', active).getAttribute('href')) {
+        const viewport = tabs.getBoundingClientRect(), item = active.getBoundingClientRect();
+        if (item.left < viewport.left) tabs.scrollLeft -= viewport.left - item.left;
+        else if (item.right > viewport.right) tabs.scrollLeft += item.right - viewport.right;
+      }
+    }
     sizeBoardTitle();
     restoreScroll(s, b?.id);
     if (timelineScroll && $('.timeline')) { $('.timeline-scroll').scrollLeft = timelineScroll.x; $('.timeline').scrollTop = timelineScroll.y; }
@@ -1225,8 +1247,20 @@ const answer = 42;
       n.className = 'menu-item' + (it.danger ? ' danger' : ''); n.setAttribute('role', 'menuitem');
       if (it.href) n.href = it.href;
       n.textContent = it.label;
+      if (it.icon) {
+        const icon = document.createElement('span'); icon.className = 'menu-item-icon';
+        icon.setAttribute('aria-hidden', 'true'); icon.textContent = it.icon;
+        n.prepend(icon);
+      }
       n.addEventListener('click', e => { e.stopPropagation(); closeMenu(); if (it.fn) run(it.fn); });
-      m.append(n);
+      if (it.close) {
+        const row = document.createElement('div'); row.className = 'menu-tab-row'; row.setAttribute('role', 'none');
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'icon-btn'; button.textContent = '✕';
+        button.setAttribute('role', 'menuitem'); button.setAttribute('aria-label', it.closeLabel);
+        button.addEventListener('click', e => { e.stopPropagation(); closeMenu(); run(it.close); });
+        row.append(n, button); m.append(row);
+      } else m.append(n);
     });
     document.body.append(m);
     const r = anchor.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
@@ -1553,15 +1587,44 @@ const answer = 42;
         { label: 'View all boards', href: '#/' }
       ]);
     },
+    'open-boards-menu'(el) {
+      openMenu(el, openBoards.map(id => boardById(id)).filter(Boolean).map(b => ({
+        label: (cur()?.id === b.id ? '✓ ' : '') + b.name, href: '#/b/' + b.id,
+        closeLabel: `Close ${b.name} tab`,
+        close: async () => {
+          const active = cur()?.id === b.id;
+          await A['close-board-tab']({ dataset: { id: b.id } });
+          const anchor = $('[data-act="open-boards-menu"]');
+          if (!active && anchor) { ui.focus = null; A['open-boards-menu'](anchor); }
+        }
+      })));
+    },
+    async 'close-board-tab'(el) {
+      const id = el.dataset.id, index = openBoards.indexOf(id);
+      if (index < 0) return;
+      const active = cur()?.id === id;
+      if (active && !await discardDescription()) return;
+      const next = openBoards[index + 1] || openBoards[index - 1];
+      openBoards = await store.updateOpenBoards({ remove: id });
+      if (active) {
+        const target = next && openBoards.includes(next) ? next : openBoards[0];
+        ui.focus = target ? `.board-tab a[href="#/b/${CSS.escape(target)}"]` : '.brand';
+        location.hash = target ? '#/b/' + target : '#/';
+      } else {
+        const focusId = next && openBoards.includes(next) ? next : openBoards[0];
+        if (focusId) ui.focus = `.board-tab a[href="#/b/${CSS.escape(focusId)}"]`;
+        render();
+      }
+    },
     'data-menu'(el) {
       openMenu(el, [
-        { label: 'Export all boards (backup)', fn: () => exportBoards(state.boards, 'kanbaya', true) },
-        { label: 'Import from file…', fn: () => $('#import-file').click() },
+        { label: 'Export all boards (backup)', icon: '⬇', fn: () => exportBoards(state.boards, 'kanbaya', true) },
+        { label: 'Import from file…', icon: '⬆', fn: () => $('#import-file').click() },
         { sep: true },
-        { label: 'Save backup to Google Drive…', fn: () => driveBackupDialog('save') },
-        { label: 'Import backup from Google Drive…', fn: () => driveBackupDialog('import') },
+        { label: 'Save backup to Google Drive…', icon: '☁↑', fn: () => driveBackupDialog('save') },
+        { label: 'Import backup from Google Drive…', icon: '☁↓', fn: () => driveBackupDialog('import') },
         { sep: true },
-        { label: 'Delete all data', danger: true, fn: async () => { if (await confirmAction('Delete ALL boards from this browser? This action cannot be undone (export a backup first).')) { state.boards = []; save(); location.hash = '#/'; render(); } } }
+        { label: 'Delete all data', icon: '🗑', danger: true, fn: async () => { if (await confirmAction('Delete ALL boards from this browser? This action cannot be undone (export a backup first).')) { state.boards = []; save(); location.hash = '#/'; render(); } } }
       ]);
     },
     'new-board'() { ui.modal = { type: 'newboard' }; ui.focus = '.nb-name'; render(); },
@@ -2174,6 +2237,7 @@ const answer = 42;
   addEventListener('hashchange', () => run(async () => {
     if (descriptionDraft && location.hash === `#/b/${descriptionDraft.boardId}`) return;
     if (!await discardDescription()) { location.replace(`#/b/${descriptionDraft.boardId}`); return; }
+    openBoards = await store.updateOpenBoards({ add: cur()?.id });
     ui.modal = null; ui.q = ''; ui.filters = { status: [], due: [], labels: [] }; ui.filterOpen = false; ui.emojiOpen = false; ui.emojiTarget = null; ui.composer = null; ui.addingList = false; closeMenu(); render();
   }));
   async function refreshExternal() {
@@ -2182,6 +2246,7 @@ const answer = 42;
     if (revision !== store.revision) {
       await run(async () => {
         state = await store.readState();
+        openBoards = await store.updateOpenBoards();
         if (ui.modal?.type === 'card' && cur()) {
           const exists = await store.db.cards.get([cur().id, ui.modal.id]);
           if (exists) {
@@ -2195,7 +2260,12 @@ const answer = 42;
     }
   }
   if (channel) channel.onmessage = () => refreshExternal().catch(storageError);
-  addEventListener('focus', () => refreshExternal().catch(storageError));
+  addEventListener('focus', () => {
+    refreshExternal().then(() => run(async () => {
+      const updated = await store.updateOpenBoards({ add: cur()?.id });
+      if (JSON.stringify(updated) !== JSON.stringify(openBoards)) { openBoards = updated; render(); }
+    })).catch(storageError);
+  });
   addEventListener('kanbaya-install-change', () => run(() => render()));
 
   /* ---------------- Cronograma ---------------- */
@@ -2442,6 +2512,7 @@ const answer = 42;
       state = await store.initialize(seed);
       await store.applyWelcomePriorities('My first board', WELCOME_PRIORITIES);
       await store.applyWelcomeDates('My first board', Object.keys(WELCOME_PRIORITIES), welcomeDates);
+      openBoards = await store.updateOpenBoards({ add: cur()?.id });
       ready = true;
       if (location.hash.startsWith('#/b/') && !cur()) location.replace('#/');
       render();

@@ -26,9 +26,23 @@ Serve the repository directory over HTTPS, or localhost for development. For exa
 node app\tests\server.js
 ```
 
+or 
+
+```powershell
+python -m http.server 8766
+```
+
+Kill process
+```powershell
+netstat -ano | findstr :8766
+taskkill /PID <1234> /F
+```
+
 When the server starts, it prints a clickable link to the application: `http://127.0.0.1:8765/app/`. Open `http://127.0.0.1:8765/` for the product website. This server is for development only. For production, publish the root `index.html`, `site.css`, `site.js`, `assets/`, `info/`, and `LICENSE`, together with `app/index.html`, `app/manifest.webmanifest`, `app/sw.js`, and the `app/scripts/`, `app/css/`, `app/vendor/`, and `app/icons/` directories under the same `app/` path. Do not publish `node_modules/`, `tests/`, or test reports. Opening the HTML using `file:` does not provide the expected PWA functionality.
 
 The website's **Install Kanbaya** button opens the application with an installation banner. Its **Install** button opens the native prompt when the browser provides one; otherwise it explains how to use the browser's install option. Availability depends on browser, device, and install status.
+
+The export/import menu uses icons to distinguish file transfers, Google Drive backups, and deleting data.
 
 For Google Drive backups, see the [step-by-step Google Cloud setup guide (Spanish)](app/docs/GOOGLE_DRIVE_SETUP.md), including the OAuth configuration and usage instructions.
 
@@ -46,6 +60,8 @@ Dexie is bundled locally in [vendor/dexie.min.js](app/vendor/dexie.min.js), with
 - Confirmation and name-entry dialogs use the application interface. When closing or reloading a browser tab with unsaved changes, the browser itself displays the unavoidable native warning.
 
 ## Loading and rendering
+
+Opening a board adds a tab to the top bar between **Create** and the storage meter, while the **Boards** menu remains available. Tabs persist in this browser across restarts, including on the home screen. Closing a tab never deletes its board; closing the active tab opens the adjacent tab to its right, or to its left if there is none, and returns home when no tabs remain. The strip has no scrollbar; **Show open boards** lists all open tabs when space is limited, with a close button on each entry to close tabs without opening them. Navigation still asks before discarding an edited description. Open-tab preferences are stored separately from board backups.
 
 The home board search retains keyboard focus and the caret while filtering. Board names are sized using their rendered font metrics, wrap on narrow screens, and remain editable without clipping; long names on home tiles also wrap.
 
@@ -194,13 +210,6 @@ Fixture: 10,000 cards, two boards with 5,000 each, a 1280 x 800 viewport, and Pl
 The heap does not include IndexedDB storage or all browser memory. Initial database setup adds overhead and is not included in these reloads. No equivalent timing baseline was recorded for the previous version: the verified improvement is structural (no global writes, on-demand details, and a bounded DOM), not an estimated speedup factor.
 
 
-### Test Local
-python -m http.server 8766
-netstat -ano | findstr :8766
-tasklist /FI "PID eq 1234"
-taskkill /PID 1234 /F
-
-node app\tests\server.js
 
 
 <a href="https://www.buymeacoffee.com/scaamanho" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 30px !important;width: 100px !important;" ></a>

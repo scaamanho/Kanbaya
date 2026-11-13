@@ -528,6 +528,10 @@ test('uses English throughout the interface and for new default content', async 
   await page.locator('[data-act="create-board"]').click();
   await expect(page.getByLabel('Board name', { exact: true })).toHaveValue('New board');
   await page.locator('[data-act="data-menu"]').click();
-  await expect(page.getByRole('menuitem', { name: 'Export all boards (backup)', exact: true })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: 'Delete all data', exact: true })).toBeVisible();
+  for (const name of ['Export all boards (backup)', 'Import from file…', 'Save backup to Google Drive…', 'Import backup from Google Drive…', 'Delete all data']) {
+    const item = page.getByRole('menuitem', { name, exact: true });
+    await expect(item).toBeVisible();
+    await expect(item.locator('.menu-item-icon')).toBeVisible();
+    await expect(item.locator('.menu-item-icon')).toHaveAttribute('aria-hidden', 'true');
+  }
 });
