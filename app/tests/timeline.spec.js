@@ -50,6 +50,50 @@ test('timeline shows overlapping intervals, milestones and unscheduled cards and
   await expect(page.locator('.timeline')).toContainText('December 2026');
 });
 
+test('timeline uses priority colors for bars and milestones, including completed cards', async ({ page }) => {
+  const data = fixture(12), cards = data.boards[0].lists[0].cards;
+  for (const card of cards) Object.assign(card, { startDate: '2026-11-05', recurrence: '' });
+  cards[0].priority = 'low';
+  cards[1].priority = 'medium';
+  Object.assign(cards[2], { priority: 'high', completed: true });
+  cards[3].priority = 'critical';
+  cards[4].completed = true;
+  Object.assign(cards[5], { priority: 'critical', startDate: '' });
+  await openTimeline(page, data);
+  for (const [id, color] of [
+    ['card0', 'rgb(75, 206, 151)'],
+    ['card2', 'rgb(245, 205, 71)'],
+    ['card4', 'rgb(254, 163, 98)'],
+    ['card6', 'rgb(248, 113, 104)']
+  ]) await expect(page.locator(`[data-timeline-id="${id}"]`)).toHaveCSS('background-color', color);
+  const defaultBar = page.locator('[data-timeline-id="card8"]');
+  const primary = await page.locator('.timeline-days .today').evaluate(el => getComputedStyle(el).backgroundColor);
+  await expect(defaultBar).toHaveCSS('background-color', primary);
+  await expect(page.locator('[data-timeline-id="card10"]')).toHaveCSS('color', 'rgb(248, 113, 104)');
+  await page.locator('.timeline-row').filter({ has: defaultBar }).locator('.timeline-card').click();
+  await page.getByLabel('Priority', { exact: true }).selectOption('high');
+  await page.keyboard.press('Escape');
+  await expect(defaultBar).toHaveCSS('background-color', 'rgb(254, 163, 98)');
+});
+
+test('double-clicking a timeline bar or milestone opens its card without changing dates', async ({ page }) => {
+  const data = fixture(4), cards = data.boards[0].lists[0].cards;
+  Object.assign(cards[0], { startDate: '2026-11-05', due: '2026-11-10' });
+  await openTimeline(page, data);
+  const bar = page.locator('[data-timeline-id="card0"]');
+  await bar.locator('.timeline-bar-label').click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  for (const target of ['.timeline-bar-label', '.timeline-handle.start', '.timeline-handle.end']) {
+    await bar.locator(target).dblclick();
+    await expect(page.getByLabel('Card title', { exact: true })).toHaveValue('Tarea 0');
+    await page.keyboard.press('Escape');
+    await expect(bar).toHaveAttribute('data-start', '2026-11-05');
+    await expect(bar).toHaveAttribute('data-due', '2026-11-10');
+  }
+  await page.locator('[data-timeline-id="card2"]').dblclick();
+  await expect(page.getByLabel('Card title', { exact: true })).toHaveValue('Tarea 2');
+});
+
 test('date fields validate ranges and survive reload; single dates remain milestones', async ({ page }) => {
   const data = fixture(2);
   await openTimeline(page, data);

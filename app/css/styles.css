@@ -355,10 +355,14 @@ button { cursor: pointer; }
 .timeline-card small { color: var(--muted); }
 .timeline-card:hover { background: var(--hover); }
 .timeline-track { position: relative; flex: 0 0 var(--timeline-width); height: 36px; background-image: repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px 36px); }
-.timeline-bar { position: absolute; top: 5px; height: 26px; display: flex; align-items: center; border-radius: 5px; background: var(--primary); color: var(--primary-text); cursor: grab; touch-action: none; user-select: none; }
+.timeline-bar { position: absolute; top: 5px; height: 26px; display: flex; align-items: center; border-radius: 5px; background: var(--timeline-color, var(--primary)); color: var(--primary-text); cursor: grab; touch-action: none; user-select: none; }
 .timeline-bar.is-dragging { opacity: .7; cursor: grabbing; }
-.timeline-bar.done { background: #4bce97; color: #172b4d; }
-.timeline-bar.milestone { justify-content: center; background: transparent; color: var(--primary); font-size: 22px; }
+.timeline-bar.priority-low { --timeline-color: #4bce97; }
+.timeline-bar.priority-medium { --timeline-color: #f5cd47; }
+.timeline-bar.priority-high { --timeline-color: #fea362; }
+.timeline-bar.priority-critical { --timeline-color: #f87168; }
+.timeline-bar.priority-low, .timeline-bar.priority-medium, .timeline-bar.priority-high, .timeline-bar.priority-critical { color: #1d2125; }
+.timeline-bar.milestone { justify-content: center; background: transparent; color: var(--timeline-color, var(--primary)); font-size: 22px; }
 .timeline-bar-label { flex: 1; overflow: hidden; padding: 0 5px; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .timeline-bar.milestone .timeline-bar-label { text-align: center; }
 .timeline-handle { align-self: stretch; flex: 0 0 9px; cursor: ew-resize; background: rgba(0, 0, 0, .2); }

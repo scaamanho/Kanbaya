@@ -1,7 +1,7 @@
 'use strict';
 /* Kanbaya PWA. Persistencia transaccional local con Dexie. */
 (() => {
-  const PRODUCT_VERSION = '1.2.0';
+  const PRODUCT_VERSION = '1.2.1';
   const PALETTE = ['#4bce97', '#f5cd47', '#fea362', '#f87168', '#9f8fef', '#579dff', '#6cc3e0', '#94c748', '#e774bb', '#8c9bab'];
   const PRIORITIES = [{ value: '', label: 'No priority' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'critical', label: 'Critical' }];
   const WELCOME_PRIORITIES = {
@@ -655,7 +655,7 @@
     }).join('');
     return `<section class="timeline" aria-label="Board timeline">
       <div class="calendar-head"><button class="btn" data-act="month-prev" aria-label="Previous month">‹</button><h2>${month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2><button class="btn" data-act="month-next" aria-label="Next month">›</button><button class="btn sm" data-act="month-today">Today</button></div>
-      <p class="timeline-help">Drag a bar to move dates or drag its ends to resize. Open a card to edit dates with the keyboard.</p>
+      <p class="timeline-help">Drag a bar to move dates or drag its ends to resize. Double-click a bar to open its card. Open a card to edit dates with the keyboard.</p>
       <div class="timeline-scroll"><div class="timeline-table" style="--timeline-width:${days * TIMELINE_DAY_WIDTH}px">
         <div class="timeline-header"><span>Card</span><div class="timeline-days">${headers}</div></div>
         <div class="timeline-window" data-timeline-first="${first}" data-timeline-days="${days}"></div>
@@ -670,10 +670,11 @@
     const right = Math.min(days - 1, dateOrdinal(end) - dateOrdinal(first));
     const milestone = !c.startDate || !c.due;
     const list = b.lists.find(l => l.id === c.listId);
+    const priority = PRIORITIES.find(p => p.value === c.priority);
     return `<div class="timeline-row" data-virtual-id="${esc(c.id)}" tabindex="-1">
       <button class="timeline-card" data-act="open-card" data-id="${esc(c.id)}" title="${esc(c.title)} — ${esc(list?.name || '')}"><strong>${esc(c.title)}</strong><small>${esc(list?.name || '')}</small></button>
       <div class="timeline-track" style="--timeline-days:${days}">
-        <div class="timeline-bar ${milestone ? 'milestone' : ''} ${c.completed ? 'done' : ''}" style="left:${left * TIMELINE_DAY_WIDTH}px;width:${(right - left + 1) * TIMELINE_DAY_WIDTH}px" data-timeline-id="${esc(c.id)}" data-start="${esc(c.startDate || '')}" data-due="${esc(c.due || '')}" title="${esc(start)}${start === end ? '' : ' – ' + esc(end)}">
+        <div class="timeline-bar ${milestone ? 'milestone' : ''} ${c.completed ? 'done' : ''} ${priority?.value ? `priority-${priority.value}` : ''}" style="left:${left * TIMELINE_DAY_WIDTH}px;width:${(right - left + 1) * TIMELINE_DAY_WIDTH}px" data-timeline-id="${esc(c.id)}" data-start="${esc(c.startDate || '')}" data-due="${esc(c.due || '')}" title="${esc(start)}${start === end ? '' : ' – ' + esc(end)}">
           ${!milestone && start >= first ? '<span class="timeline-handle start" data-timeline-handle="start"></span>' : ''}
           <span class="timeline-bar-label">${milestone ? '◆' : esc(c.title)}</span>
           ${!milestone && dateOrdinal(end) < dateOrdinal(first) + days ? '<span class="timeline-handle end" data-timeline-handle="end"></span>' : ''}
@@ -2013,6 +2014,12 @@ const answer = 42;
       if (changed && renderCount === before && el?.dataset.act !== 'edit-list-title') render();
       else if (closingFilters && renderCount === before) render();
     });
+  });
+  document.addEventListener('dblclick', e => {
+    const bar = e.target.closest('.timeline-bar');
+    if (!bar || e.button !== 0 || Date.now() < suppressClick || timelineDrag || drag || ui.modal) return;
+    const card = $('.timeline-card', bar.closest('.timeline-row'));
+    if (card) run(() => dispatch('open-card', card, e));
   });
 
   document.addEventListener('input', e => {
